@@ -2,15 +2,18 @@ import { useEffect, useState } from "react";
 import Head from "next/head";
 import { SignalSection } from "@/components/sections/SignalSection";
 import { NearbySection } from "@/components/sections/NearbySection";
+import { DEFAULT_ITST_ID, DEFAULT_ITST_NAME } from "@/lib/defaults";
 
 export default function Home() {
-  const [itstId, setItstId] = useState("0000");
+  const [itstId, setItstId] = useState(DEFAULT_ITST_ID);
 
   useEffect(() => {
-    const saved = typeof window !== "undefined"
-      ? localStorage.getItem("lastItstId")
-      : null;
-    if (saved) setItstId(saved);
+    const saved =
+      typeof window !== "undefined" ? localStorage.getItem("lastItstId") : null;
+    if (!saved) return;
+    const trimmed = saved.trim();
+    if (!trimmed || trimmed === "0000") return;
+    setItstId(trimmed);
   }, []);
 
   useEffect(() => {
@@ -47,11 +50,18 @@ export default function Home() {
             이 화면의 잔여시간은 &quot;현재 켜진 신호&quot;의 잔여이며,
             &quot;다음 보행 시작까지 대기시간&quot;은 직접 제공되지 않아 관측 기반
             추정이 필요합니다.
+            <br />
+            기본 교차로: <b>{DEFAULT_ITST_NAME}</b> (ID: {DEFAULT_ITST_ID})
           </p>
         </div>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <SignalSection itstId={itstId} onItstIdChange={setItstId} />
+          <SignalSection
+            itstId={itstId}
+            onItstIdChange={setItstId}
+            defaultItstId={DEFAULT_ITST_ID}
+            defaultItstName={DEFAULT_ITST_NAME}
+          />
           <NearbySection onSelectItstId={setItstId} />
         </div>
       </div>

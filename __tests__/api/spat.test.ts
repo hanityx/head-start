@@ -1,6 +1,11 @@
 import { createMocks } from "node-mocks-http";
 import handler from "@/pages/api/spat";
-import { mockFetchOnce } from "../../test/testUtils";
+import {
+  ensureFetchMock,
+  mockFetchJsonOnce,
+  mockFetchTextOnce,
+  resetFetchMock,
+} from "@/test/testUtils";
 
 jest.mock("@/lib/itstMeta", () => ({
   loadItstMeta: () =>
@@ -9,11 +14,11 @@ jest.mock("@/lib/itstMeta", () => ({
 
 describe("/api/spat", () => {
   beforeAll(() => {
-    global.fetch = jest.fn();
+    ensureFetchMock();
   });
 
   beforeEach(() => {
-    (global.fetch as jest.Mock).mockClear();
+    resetFetchMock();
     process.env.TDATA_API_KEY = "test-key";
   });
 
@@ -50,8 +55,8 @@ describe("/api/spat", () => {
       ],
     };
 
-    mockFetchOnce({ ok: true, status: 200, json: timing });
-    mockFetchOnce({ ok: true, status: 200, json: phase });
+    mockFetchJsonOnce(timing, { ok: true, status: 200 });
+    mockFetchJsonOnce(phase, { ok: true, status: 200 });
 
     const { req, res } = createMocks({
       method: "GET",
@@ -66,7 +71,7 @@ describe("/api/spat", () => {
     expect(data.itstNm).toBe("테스트교차로");
   });
 
-  it("includes debug fields when requested", async () => {
+  it("does not include debug fields even when requested", async () => {
     const now = Date.now();
     const timing = {
       data: [{ itstId: "1560", trsmUtcTime: now, ntPdsgRmdrCs: 120 }],
@@ -81,8 +86,8 @@ describe("/api/spat", () => {
       ],
     };
 
-    mockFetchOnce({ ok: true, status: 200, json: timing });
-    mockFetchOnce({ ok: true, status: 200, json: phase });
+    mockFetchJsonOnce(timing, { ok: true, status: 200 });
+    mockFetchJsonOnce(phase, { ok: true, status: 200 });
 
     const { req, res } = createMocks({
       method: "GET",
@@ -92,14 +97,14 @@ describe("/api/spat", () => {
     await handler(req, res);
 
     const data = JSON.parse(res._getData());
-    expect(data.upstreamRaw).toBeDefined();
-    expect(data.latestTiming).toBeDefined();
-    expect(data.latestPhase).toBeDefined();
+    expect(data.upstreamRaw).toBeUndefined();
+    expect(data.latestTiming).toBeUndefined();
+    expect(data.latestPhase).toBeUndefined();
   });
 
   it("returns 502 when upstream is non-json", async () => {
-    mockFetchOnce({ ok: true, status: 200, text: "<html>nope</html>" });
-    mockFetchOnce({ ok: true, status: 200, text: "<html>nope</html>" });
+    mockFetchTextOnce("<html>nope</html>", { ok: true, status: 200 });
+    mockFetchTextOnce("<html>nope</html>", { ok: true, status: 200 });
 
     const { req, res } = createMocks({
       method: "GET",

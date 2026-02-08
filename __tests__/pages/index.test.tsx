@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import Home from "@/pages/index";
 import { makeSpatResponse } from "@/test/fixtures";
+import { DEFAULT_ITST_ID, DEFAULT_ITST_NAME } from "@/lib/defaults";
 import {
   ensureFetchMock,
   mockFetchJsonOnce,
@@ -27,18 +28,23 @@ describe("Home Page", () => {
 
   it("should have default values for inputs", () => {
     render(<Home />);
-    const itstIdInput = screen.getByDisplayValue("0000");
+    const itstIdInput = screen.getByDisplayValue(DEFAULT_ITST_ID);
     const timeoutInput = screen.getByDisplayValue("25000");
     const intervalInput = screen.getByDisplayValue("3000");
 
     expect(itstIdInput).toBeInTheDocument();
     expect(timeoutInput).toBeInTheDocument();
     expect(intervalInput).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText(`${DEFAULT_ITST_NAME} (${DEFAULT_ITST_ID})`)
+    ).toBeInTheDocument();
   });
 
   it("should update input values on change", () => {
     render(<Home />);
-    const itstIdInput = screen.getByDisplayValue("0000") as HTMLInputElement;
+    const itstIdInput = screen.getByDisplayValue(
+      DEFAULT_ITST_ID
+    ) as HTMLInputElement;
 
     fireEvent.change(itstIdInput, { target: { value: "1234" } });
     expect(itstIdInput.value).toBe("1234");
@@ -57,7 +63,7 @@ describe("Home Page", () => {
 
     await waitFor(() => {
         expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/spat?itstId=0000")
+        expect.stringContaining(`/api/spat?itstId=${DEFAULT_ITST_ID}`)
       );
     });
   });

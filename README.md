@@ -53,6 +53,7 @@ npm start
 
 ## 배포 (간단)
 
+- 서비스 URL: https://head-start-seven.vercel.app
 - Vercel에 프로젝트를 연결한 뒤 배포합니다.
 - 필수 환경 변수: `TDATA_API_KEY`
 - CLI 배포가 필요하면 아래 명령으로 실행할 수 있습니다.
