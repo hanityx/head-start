@@ -31,13 +31,6 @@ export default async function handler(
     const itstId = String(req.query.itstId || "").trim();
     if (!itstId) return res.status(400).json({ error: "missing itstId" });
 
-    const debugRequested =
-      String(req.query.debug || "").toLowerCase() === "true" ||
-      String(req.query.debug || "") === "1";
-    const debugEnabled =
-      process.env.NODE_ENV !== "production" || process.env.DEBUG === "true";
-    const debug = debugRequested && debugEnabled;
-
     const apiKey = String(process.env.TDATA_API_KEY || "").trim();
     if (!apiKey) {
       return res.status(400).json({
@@ -168,15 +161,6 @@ export default async function handler(
       },
       note: "잔여시간(*RmdrCs)은 '현재 켜진 신호' 기준입니다. '다음 보행 시작까지 남은 시간'은 직접 제공되지 않으며, 관측 기반 추정이 필요합니다.",
     };
-
-    if (debug) {
-      payload.latestTiming = latestTiming;
-      payload.latestPhase = latestPhase;
-      payload.upstreamRaw = {
-        timing: timing.json,
-        phase: phase.json,
-      };
-    }
 
     res.status(200).json(payload);
   } catch (e: unknown) {

@@ -25,12 +25,6 @@ export type SpatResponse = {
     phase?: { status?: number };
   };
   note?: string;
-  latestTiming?: Record<string, unknown>;
-  latestPhase?: Record<string, unknown>;
-  upstreamRaw?: {
-    timing?: unknown;
-    phase?: unknown;
-  };
 };
 
 export type NearbyItem = {

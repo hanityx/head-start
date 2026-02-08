@@ -4,11 +4,9 @@ import type { SpatResponse } from "@/lib/types";
 export function useSpat({
   itstId,
   timeoutMs,
-  debug,
 }: {
   itstId: string;
   timeoutMs: string;
-  debug: boolean;
 }) {
   const [spatData, setSpatData] = useState<SpatResponse | null>(null);
   const [error, setError] = useState<string>("");
@@ -21,9 +19,7 @@ export function useSpat({
       const res = await fetch(
         `/api/spat?itstId=${encodeURIComponent(
           itstId
-        )}&timeoutMs=${encodeURIComponent(timeoutMs)}&debug=${
-          debug ? "true" : "false"
-        }`
+        )}&timeoutMs=${encodeURIComponent(timeoutMs)}`
       );
       const json = (await res.json()) as SpatResponse;
       if (!res.ok) {
@@ -42,7 +38,7 @@ export function useSpat({
     } finally {
       setIsLoading(false);
     }
-  }, [debug, itstId, timeoutMs]);
+  }, [itstId, timeoutMs]);
 
   return {
     spatData,

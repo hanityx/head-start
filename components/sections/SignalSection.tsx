@@ -66,20 +66,22 @@ const fmtSec = (sec: number | null) => {
 export function SignalSection({
   itstId,
   onItstIdChange,
+  defaultItstId,
+  defaultItstName,
 }: {
   itstId: string;
   onItstIdChange: (value: string) => void;
+  defaultItstId: string;
+  defaultItstName: string;
 }) {
   const [timeoutMs, setTimeoutMs] = useState("25000");
   const [intervalMs, setIntervalMs] = useState("3000");
-  const [debug, setDebug] = useState(false);
   const [isAuto, setIsAuto] = useState(false);
   const autoTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const { spatData, error, isLoading, fetchSpat } = useSpat({
     itstId,
     timeoutMs,
-    debug,
   });
   const confidenceLevel =
     spatData == null || spatData.ageSec == null
@@ -145,7 +147,11 @@ export function SignalSection({
                 value={itstId}
                 onChange={(e) => onItstIdChange(e.target.value)}
                 className="mt-2"
+                placeholder={`${defaultItstName} (${defaultItstId})`}
               />
+              <p className="mt-1 text-[11px]">
+                기본값: <b>{defaultItstName}</b> (ID: {defaultItstId})
+              </p>
             </label>
             <label className="text-xs text-muted-foreground">
               요청 타임아웃(ms)
@@ -157,13 +163,22 @@ export function SignalSection({
             </label>
             <div className="flex flex-wrap gap-2">
               <Button onClick={fetchSpat}>조회</Button>
-              <Button variant="outline" onClick={() => setIsAuto((prev) => !prev)}>
+              <Button
+                variant="outline"
+                onClick={() => onItstIdChange(defaultItstId)}
+              >
+                기본값 사용
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setIsAuto((prev) => !prev)}
+              >
                 {isAuto ? "자동 갱신 중지" : "자동 갱신 시작"}
               </Button>
             </div>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+          <div className="grid gap-2 sm:grid-cols-1 sm:items-end">
             <label className="text-xs text-muted-foreground">
               간격(ms)
               <Input
@@ -171,14 +186,6 @@ export function SignalSection({
                 onChange={(e) => setIntervalMs(e.target.value)}
                 className="mt-2"
               />
-            </label>
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={debug}
-                onChange={(e) => setDebug(e.target.checked)}
-              />
-              디버그
             </label>
           </div>
 
@@ -215,22 +222,6 @@ export function SignalSection({
             )
           )}
 
-          {debug && spatData && (
-            <div className="rounded-md border border-border/60 bg-muted/40 p-3 text-xs text-muted-foreground">
-              <div>
-                전송 시각(KST):{" "}
-                <span className="rounded bg-muted/70 px-2 py-0.5 font-mono">
-                  {spatData.trsmKst ?? "-"}
-                </span>
-              </div>
-              <div className="mt-1">
-                경과 초:{" "}
-                <span className="rounded bg-muted/70 px-2 py-0.5 font-mono">
-                  {spatData.ageSec ?? "-"}
-                </span>
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -296,13 +287,6 @@ export function SignalSection({
                     emphasis={emphasis}
                     size="md"
                     isLoading={isLoading}
-                    footer={
-                      debug
-                        ? `수신 ${fmtSec(it.secAtMsg ?? null)} · 보정 ${fmtSec(
-                            sec ?? null
-                          )}`
-                        : undefined
-                    }
                   />
                 );
               })}
