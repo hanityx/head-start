@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import Home from "@/pages/index";
 import { makeSpatResponse } from "@/test/fixtures";
-import { DEFAULT_ITST_ID, DEFAULT_ITST_NAME } from "@/lib/defaults";
+import { DEFAULT_ITST_ID } from "@/lib/defaults";
 import {
   ensureFetchMock,
   mockFetchJsonOnce,
@@ -29,15 +29,13 @@ describe("Home Page", () => {
   it("should have default values for inputs", () => {
     render(<Home />);
     const itstIdInput = screen.getByDisplayValue(DEFAULT_ITST_ID);
-    const timeoutInput = screen.getByDisplayValue("25000");
-    const intervalInput = screen.getByDisplayValue("3000");
+    const timeoutInput = screen.getByDisplayValue("25");
+    const intervalInput = screen.getByDisplayValue("3");
 
     expect(itstIdInput).toBeInTheDocument();
     expect(timeoutInput).toBeInTheDocument();
     expect(intervalInput).toBeInTheDocument();
-    expect(
-      screen.getByPlaceholderText(`${DEFAULT_ITST_NAME} (${DEFAULT_ITST_ID})`)
-    ).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(`예: ${DEFAULT_ITST_ID}`)).toBeInTheDocument();
   });
 
   it("should update input values on change", () => {
@@ -88,7 +86,9 @@ describe("Home Page", () => {
     render(<Home />);
     expect(screen.getByDisplayValue("37.5665")).toBeInTheDocument();
     expect(screen.getByDisplayValue("126.9780")).toBeInTheDocument();
-    expect(screen.getByText("가까운 교차로 찾기")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "가까운 교차로 찾기" })
+    ).toBeInTheDocument();
   });
 
   it("should toggle auto refresh", () => {

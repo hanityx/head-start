@@ -1,4 +1,5 @@
 import * as React from "react";
+import type { LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/ui";
 import {
@@ -13,8 +14,16 @@ type SignalTone = "red" | "yellow" | "green" | "gray";
 type SignalSize = "sm" | "md" | "lg";
 type SignalEmphasis = "normal" | "critical";
 
+export type SignalGuide = {
+  icon: LucideIcon;
+  label: string;
+  directionLabel?: string;
+  directionIcon?: LucideIcon;
+};
+
 export type SignalCountdownCardProps = {
   title: string;
+  guide?: SignalGuide;
   statusLabel: string;
   statusDesc?: string;
   tone: SignalTone;
@@ -26,9 +35,9 @@ export type SignalCountdownCardProps = {
 };
 
 const sizeMap: Record<SignalSize, string> = {
-  sm: "text-lg",
-  md: "text-2xl",
-  lg: "text-3xl",
+  sm: "text-xl",
+  md: "text-3xl",
+  lg: "text-4xl",
 };
 
 const toneMap: Record<SignalTone, string> = {
@@ -40,6 +49,7 @@ const toneMap: Record<SignalTone, string> = {
 
 export function SignalCountdownCard({
   title,
+  guide,
   statusLabel,
   statusDesc,
   tone,
@@ -75,6 +85,22 @@ export function SignalCountdownCard({
             </div>
           </div>
         </div>
+        {guide && (
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/40 px-2.5 py-1 text-xs font-semibold text-foreground/90">
+              <guide.icon className="h-4 w-4" />
+              {guide.label}
+            </span>
+            {guide.directionLabel && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background px-2.5 py-1 text-xs font-semibold text-foreground/90">
+                {guide.directionIcon ? (
+                  <guide.directionIcon className="h-4 w-4" />
+                ) : null}
+                {guide.directionLabel}
+              </span>
+            )}
+          </div>
+        )}
         {statusDesc && (
           <CardDescription className="text-xs text-muted-foreground">
             {statusDesc}
