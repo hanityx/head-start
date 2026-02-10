@@ -118,17 +118,6 @@ export default async function handler(
       )
     );
 
-    const pickItstName = (rec: Record<string, unknown> | null): string | null => {
-      if (!rec) return null;
-      const direct = rec.itstNm;
-      if (typeof direct === "string" && direct.trim()) return direct.trim();
-      for (const [k, v] of Object.entries(rec)) {
-        if (k.toLowerCase() !== "itstnm") continue;
-        if (typeof v === "string" && v.trim()) return v.trim();
-      }
-      return null;
-    };
-
     logDebug(`[data] timing=${!!latestTiming} phase=${!!latestPhase}`);
 
     const trsmMs = Math.max(
@@ -151,12 +140,11 @@ export default async function handler(
       lat: null,
       lon: null,
     };
-    const upstreamItstNm = pickItstName(latestTiming) ?? pickItstName(latestPhase);
     const trsmKst = trsmMs ? toKstMsString(trsmMs) : null;
 
     const payload: SpatResponse = {
       itstId,
-      itstNm: meta.itstNm ?? upstreamItstNm ?? `교차로 ${itstId}`,
+      itstNm: meta.itstNm,
       lat: meta.lat,
       lon: meta.lon,
 
