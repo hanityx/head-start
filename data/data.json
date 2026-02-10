@@ -11950,5 +11950,17 @@
     "itstEngNm": "Hwimungogyo(sub1)",
     "rgtrId": "V2X",
     "regDt": "2026-01-10T16:31:13.000+00:00"
+  },
+  {
+    "itstId": "1560",
+    "itstNm": "면목아이파크102동",
+    "mapCtptIntLat": 37.5813116,
+    "mapCtptIntLot": 127.0813421,
+    "laneWidth": null,
+    "limitSpedTypeNm": null,
+    "limitSped": null,
+    "itstEngNm": null,
+    "rgtrId": "V2X",
+    "regDt": "2026-01-10T16:31:14.000+00:00"
   }
 ]
