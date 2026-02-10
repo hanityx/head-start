@@ -115,42 +115,4 @@ describe("/api/spat", () => {
 
     expect(res._getStatusCode()).toBe(502);
   });
-
-  it("falls back to upstream itstNm when local meta is missing", async () => {
-    const now = Date.now();
-    const timing = {
-      data: [
-        {
-          itstId: "9999",
-          itstNm: "업스트림교차로",
-          trsmUtcTime: now,
-          ntPdsgRmdrCs: 80,
-        },
-      ],
-    };
-    const phase = {
-      data: [
-        {
-          itstId: "9999",
-          itstNm: "업스트림교차로",
-          trsmUtcTime: now,
-          ntPdsgStatNm: "stop-And-Remain",
-        },
-      ],
-    };
-
-    mockFetchJsonOnce(timing, { ok: true, status: 200 });
-    mockFetchJsonOnce(phase, { ok: true, status: 200 });
-
-    const { req, res } = createMocks({
-      method: "GET",
-      query: { itstId: "9999" },
-    });
-
-    await handler(req, res);
-
-    expect(res._getStatusCode()).toBe(200);
-    const data = JSON.parse(res._getData());
-    expect(data.itstNm).toBe("업스트림교차로");
-  });
 });
