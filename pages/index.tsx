@@ -6,8 +6,6 @@ import { DEFAULT_ITST_ID } from "@/lib/defaults";
 
 export default function Home() {
   const [itstId, setItstId] = useState(DEFAULT_ITST_ID);
-  const [externalFetchTrigger, setExternalFetchTrigger] = useState(0);
-  const [allowAutoNearest, setAllowAutoNearest] = useState(true);
 
   useEffect(() => {
     const saved =
@@ -16,24 +14,12 @@ export default function Home() {
     const trimmed = saved.trim();
     if (!trimmed || trimmed === "0000") return;
     setItstId(trimmed);
-    setAllowAutoNearest(false);
   }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     localStorage.setItem("lastItstId", itstId);
   }, [itstId]);
-
-  const handleItstIdChange = (value: string) => {
-    setItstId(value);
-    setAllowAutoNearest(false);
-  };
-
-  const handleSelectItstIdAndFetch = (value: string) => {
-    setItstId(value);
-    setAllowAutoNearest(false);
-    setExternalFetchTrigger((prev) => prev + 1);
-  };
 
   return (
     <>
@@ -58,25 +44,22 @@ export default function Home() {
             </div>
           </div>
           <p className="mt-4 text-sm text-muted-foreground">
-            서울 T-Data V2X SPaT 기준입니다.
-            <b> 통신 상태에 따라 몇 초 지연되거나 값이 잠시 멈춰 보일 수 있습니다.</b>
+            서울 T-Data V2X SPaT 기준입니다. 실시간이라도 통신 상태에 따라
+            <b>몇 초 지연되거나 잠시 값이 멈춰 보일 수 있습니다.</b>
             <br />
-            좌측(모바일은 위)에서 신호를 조회하고, 우측(모바일은 아래)에서 주변 교차로를
-            골라 ID를 바로 입력할 수 있습니다.
+            여기서 보이는 시간은 &quot;지금 켜진 신호가 끝날 때까지 남은 시간&quot;입니다.
+            <br />
+            ID를 직접 입력하거나, 오른쪽에서 가까운 교차로를 선택해 조회할 수 있습니다.
           </p>
         </div>
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
           <SignalSection
             itstId={itstId}
-            onItstIdChange={handleItstIdChange}
+            onItstIdChange={setItstId}
             defaultItstId={DEFAULT_ITST_ID}
-            externalFetchTrigger={externalFetchTrigger}
           />
-          <NearbySection
-            onSelectItstId={handleSelectItstIdAndFetch}
-            autoSelectNearest={allowAutoNearest}
-          />
+          <NearbySection onSelectItstId={setItstId} />
         </div>
       </div>
     </>
