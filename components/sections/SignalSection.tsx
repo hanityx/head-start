@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ import {
   Loader2,
   RotateCcw,
 } from "lucide-react";
+import itstMetaJson from "@/data/itst-meta.json";
 
 const STATUS_MAP: Record<string, { text: string; color: string }> = {
   "stop-And-Remain": {
@@ -97,7 +98,7 @@ const finalizeSeconds = (
   raw: string,
   min: number,
   max: number,
-  fallback: number
+  fallback: number,
 ) => {
   const n = Number(raw);
   if (!Number.isFinite(n)) return String(fallback);
@@ -168,32 +169,42 @@ const explainSignal = (item: SpatItem): SignalGuide => {
   return { icon: CircleHelp, label: "기타" };
 };
 
+const ITST_NAME_BY_ID = new Map<string, string | null>(
+  (itstMetaJson as Array<{ itstId?: string | number; itstNm?: string | null }>)
+    .filter((row) => row && row.itstId !== undefined && row.itstId !== null)
+    .map((row) => [String(row.itstId), row.itstNm ?? null]),
+);
+
 export function SignalSection({
   itstId,
   onItstIdChange,
   defaultItstId,
+  externalFetchTrigger = 0,
 }: {
   itstId: string;
   onItstIdChange: (value: string) => void;
   defaultItstId: string;
+  externalFetchTrigger?: number;
 }) {
   const [timeoutSec, setTimeoutSec] = useState(String(TIMEOUT_SEC_DEFAULT));
   const [intervalSec, setIntervalSec] = useState(String(INTERVAL_SEC_DEFAULT));
   const [isAuto, setIsAuto] = useState(false);
   const autoTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const handledExternalFetchRef = useRef(0);
 
   const timeoutMs = String(
     clampInt(
       Number(timeoutSec || TIMEOUT_SEC_DEFAULT),
       TIMEOUT_SEC_MIN,
-      TIMEOUT_SEC_MAX
-    ) * 1000
+      TIMEOUT_SEC_MAX,
+    ) * 1000,
   );
-  const intervalMs = clampInt(
-    Number(intervalSec || INTERVAL_SEC_DEFAULT),
-    INTERVAL_SEC_MIN,
-    INTERVAL_SEC_MAX
-  ) * 1000;
+  const intervalMs =
+    clampInt(
+      Number(intervalSec || INTERVAL_SEC_DEFAULT),
+      INTERVAL_SEC_MIN,
+      INTERVAL_SEC_MAX,
+    ) * 1000;
 
   const { spatData, error, isLoading, fetchSpat } = useSpat({
     itstId,
@@ -203,12 +214,12 @@ export function SignalSection({
     spatData == null || spatData.ageSec == null
       ? "stale"
       : spatData.ageSec <= 2
-      ? "high"
-      : spatData.ageSec <= 5
-      ? "medium"
-      : spatData.ageSec <= 10
-      ? "low"
-      : "stale";
+        ? "high"
+        : spatData.ageSec <= 5
+          ? "medium"
+          : spatData.ageSec <= 10
+            ? "low"
+            : "stale";
 
   useEffect(() => {
     if (!isAuto) {
@@ -231,14 +242,27 @@ export function SignalSection({
     };
   }, [fetchSpat, intervalMs, isAuto]);
 
+  useEffect(() => {
+    if (externalFetchTrigger <= 0) return;
+    if (externalFetchTrigger === handledExternalFetchRef.current) return;
+    handledExternalFetchRef.current = externalFetchTrigger;
+    if (!itstId.trim()) return;
+    fetchSpat();
+  }, [externalFetchTrigger, fetchSpat, itstId]);
+
+  const inlineItstNm = useMemo(() => {
+    const trimmed = itstId.trim();
+    if (!trimmed || !/^\d+$/.test(trimmed)) return null;
+    if (spatData && spatData.itstId === trimmed && spatData.itstNm) return spatData.itstNm;
+    return ITST_NAME_BY_ID.get(trimmed) ?? null;
+  }, [itstId, spatData]);
+
   return (
     <section className="space-y-4">
       <Card className="border border-border/70">
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle className="text-base font-semibold">
-              신호 조회
-            </CardTitle>
+            <CardTitle className="text-base font-semibold">신호 조회</CardTitle>
             {error ? (
               <Badge variant="destructive">오류/미수신</Badge>
             ) : isLoading && spatData ? (
@@ -256,16 +280,15 @@ export function SignalSection({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="rounded-md border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground">
-            <p>
-              교차로 ID를 모르겠다면 오른쪽 <b>가까운 교차로 찾기</b>에서 선택하면
-              자동으로 입력됩니다.
-            </p>
+          <div className="flex items-center gap-2 rounded-md border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            주변 교차로 찾기에서 선택하면 ID가 자동 입력됩니다.
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+          <div className="grid gap-3 sm:grid-cols-[minmax(190px,1.15fr)_80px_80px_auto] sm:items-end">
             <label className="text-xs text-muted-foreground">
-              교차로 ID (숫자)
+              교차로 ID
+              {inlineItstNm ? ` · ${inlineItstNm}` : ""}
               <Input
                 value={itstId}
                 onChange={(e) => onItstIdChange(e.target.value)}
@@ -274,7 +297,7 @@ export function SignalSection({
               />
             </label>
             <label className="text-xs text-muted-foreground">
-              응답 대기 시간(초)
+              대기(초)
               <Input
                 type="number"
                 min={TIMEOUT_SEC_MIN}
@@ -290,42 +313,15 @@ export function SignalSection({
                       timeoutSec,
                       TIMEOUT_SEC_MIN,
                       TIMEOUT_SEC_MAX,
-                      TIMEOUT_SEC_DEFAULT
-                    )
+                      TIMEOUT_SEC_DEFAULT,
+                    ),
                   )
                 }
                 className="mt-2"
               />
             </label>
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={fetchSpat} disabled={isLoading}>
-                {isLoading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    조회 중
-                  </>
-                ) : (
-                  "조회"
-                )}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => onItstIdChange(defaultItstId)}
-              >
-                기본값으로 초기화
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setIsAuto((prev) => !prev)}
-              >
-                {isAuto ? "자동 갱신 중지" : "자동 갱신 시작"}
-              </Button>
-            </div>
-          </div>
-
-          <div className="grid gap-2 sm:grid-cols-1 sm:items-end">
             <label className="text-xs text-muted-foreground">
-              자동 새로고침(초)
+              자동(초)
               <Input
                 type="number"
                 min={INTERVAL_SEC_MIN}
@@ -341,13 +337,46 @@ export function SignalSection({
                       intervalSec,
                       INTERVAL_SEC_MIN,
                       INTERVAL_SEC_MAX,
-                      INTERVAL_SEC_DEFAULT
-                    )
+                      INTERVAL_SEC_DEFAULT,
+                    ),
                   )
                 }
                 className="mt-2"
               />
             </label>
+            <div className="flex w-full flex-nowrap gap-2 overflow-x-auto pb-1 sm:w-auto sm:overflow-visible sm:pb-0">
+              <Button
+                size="sm"
+                className="shrink-0"
+                onClick={fetchSpat}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    조회중
+                  </>
+                ) : (
+                  "조회"
+                )}
+              </Button>
+              <Button
+                size="sm"
+                className="shrink-0"
+                variant="outline"
+                onClick={() => onItstIdChange(defaultItstId)}
+              >
+                초기화
+              </Button>
+              <Button
+                size="sm"
+                className="shrink-0"
+                variant="outline"
+                onClick={() => setIsAuto((prev) => !prev)}
+              >
+                {isAuto ? "자동 갱신 끄기" : "자동 갱신 켜기"}
+              </Button>
+            </div>
           </div>
 
           {isLoading && !spatData ? (
@@ -374,7 +403,6 @@ export function SignalSection({
               </div>
             )
           )}
-
         </CardContent>
       </Card>
 
@@ -384,7 +412,12 @@ export function SignalSection({
             <CardTitle className="text-base font-semibold">
               신호 리스트
             </CardTitle>
-            <Button variant="ghost" size="sm" onClick={fetchSpat} disabled={isLoading}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={fetchSpat}
+              disabled={isLoading}
+            >
               {isLoading ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -430,15 +463,19 @@ export function SignalSection({
                 </Card>
               ))}
             </div>
-          ) : !spatData ? null : !spatData.items || spatData.items.length === 0 ? (
+          ) : !spatData ? null : !spatData.items ||
+            spatData.items.length === 0 ? (
             <div className="rounded-md border border-border/60 bg-muted/40 p-3 text-xs text-muted-foreground">
-              표시할 신호 항목이 없습니다. (해당 교차로가 V2X 제공
-              대상인지, 또는 현재 시각에 수신이 있는지 확인)
+              표시할 신호 항목이 없습니다. (해당 교차로가 V2X 제공 대상인지,
+              또는 현재 시각에 수신이 있는지 확인)
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
               {spatData.items.map((it: SpatItem) => {
-                const sec = it.sec;
+                const sec =
+                  it.sec === null || it.sec === undefined
+                    ? null
+                    : Number(Math.max(0, it.sec).toFixed(1));
                 const statusInfo = translateStatus(it.status);
                 const stableKey =
                   it.key ??
@@ -448,10 +485,10 @@ export function SignalSection({
                   statusInfo?.color === "red"
                     ? "red"
                     : statusInfo?.color === "green"
-                    ? "green"
-                    : statusInfo?.color === "yellow"
-                    ? "yellow"
-                    : "gray";
+                      ? "green"
+                      : statusInfo?.color === "yellow"
+                        ? "yellow"
+                        : "gray";
                 const emphasis =
                   sec !== null && sec !== undefined && sec < 10
                     ? "critical"
