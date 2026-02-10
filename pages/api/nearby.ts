@@ -3,6 +3,8 @@ import { haversineMeters } from "@/lib/utils";
 import { loadItstMeta } from "@/lib/itstMeta";
 import type { NearbyItem } from "@/lib/types";
 
+const MAX_NEARBY_RESULTS = 50;
+
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -11,7 +13,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     const lat = Number(req.query.lat);
     const lon = Number(req.query.lon);
-    const k = Math.max(1, Math.min(20, Number(req.query.k || 5)));
+    const k = Math.max(1, Math.min(MAX_NEARBY_RESULTS, Number(req.query.k || 5)));
     const itstMetaById = loadItstMeta();
 
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
