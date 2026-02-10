@@ -84,22 +84,25 @@ describe("Home Page", () => {
 
   it("should render nearby search inputs", () => {
     render(<Home />);
-    expect(screen.getByDisplayValue("37.5665")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("126.9780")).toBeInTheDocument();
+    expect(screen.getByLabelText("주소/역 이름으로 찾기")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "주소 검색" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "현재 위치" })).toBeInTheDocument();
+    expect(screen.queryByText("위도")).not.toBeInTheDocument();
+    expect(screen.queryByText("경도")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "가까운 교차로 찾기" })
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "가까운 교차로 찾기" })
+    ).not.toBeInTheDocument();
   });
 
   it("should toggle auto refresh", () => {
     render(<Home />);
-    const autoButton = screen.getByText("자동 갱신 시작");
+    const autoButton = screen.getByText("자동 갱신 켜기");
 
     fireEvent.click(autoButton);
-    expect(screen.getByText("자동 갱신 중지")).toBeInTheDocument();
+    expect(screen.getByText("자동 갱신 끄기")).toBeInTheDocument();
 
     fireEvent.click(autoButton);
-    expect(screen.getByText("자동 갱신 시작")).toBeInTheDocument();
+    expect(screen.getByText("자동 갱신 켜기")).toBeInTheDocument();
   });
 
   it("should search nearby intersections with geocoded coordinates", async () => {
@@ -155,6 +158,52 @@ describe("Home Page", () => {
       expect(getCurrentPosition).toHaveBeenCalled();
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining("/api/nearby?lat=37.5665&lon=126.978&k=5")
+      );
+    });
+  });
+
+  it("should set id and fetch spat when selecting nearby intersection", async () => {
+    mockFetchJsonOnce({
+      items: [
+        {
+          itstId: "1560",
+          itstNm: "면목아이파크102동",
+          lat: 37.5813116,
+          lon: 127.0813421,
+          distanceM: 120.5,
+        },
+      ],
+    });
+    mockFetchJsonOnce(makeSpatResponse({ itstId: "1560" }));
+
+    const getCurrentPosition = jest.fn(
+      (
+        success: (position: { coords: { latitude: number; longitude: number } }) => void
+      ) => success({ coords: { latitude: 37.5665, longitude: 126.978 } })
+    );
+
+    Object.defineProperty(global.navigator, "geolocation", {
+      configurable: true,
+      value: { getCurrentPosition },
+    });
+
+    render(<Home />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "현재 위치" }));
+      await flushPromises();
+    });
+
+    const selectButton = await screen.findByRole("button", { name: "이 ID로 조회" });
+    await act(async () => {
+      fireEvent.click(selectButton);
+      await flushPromises();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("1560")).toBeInTheDocument();
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/spat?itstId=1560")
       );
     });
   });
