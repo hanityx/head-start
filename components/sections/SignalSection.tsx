@@ -172,12 +172,10 @@ export function SignalSection({
   itstId,
   onItstIdChange,
   defaultItstId,
-  externalFetchTrigger = 0,
 }: {
   itstId: string;
   onItstIdChange: (value: string) => void;
   defaultItstId: string;
-  externalFetchTrigger?: number;
 }) {
   const [timeoutSec, setTimeoutSec] = useState(String(TIMEOUT_SEC_DEFAULT));
   const [intervalSec, setIntervalSec] = useState(String(INTERVAL_SEC_DEFAULT));
@@ -232,11 +230,6 @@ export function SignalSection({
       }
     };
   }, [fetchSpat, intervalMs, isAuto]);
-
-  useEffect(() => {
-    if (externalFetchTrigger <= 0) return;
-    fetchSpat();
-  }, [externalFetchTrigger, fetchSpat]);
 
   return (
     <section className="space-y-4">
@@ -325,7 +318,7 @@ export function SignalSection({
                 variant="outline"
                 onClick={() => setIsAuto((prev) => !prev)}
               >
-                {isAuto ? "자동 갱신 끄기" : "자동 갱신 켜기"}
+                {isAuto ? "자동 갱신 중지" : "자동 갱신 시작"}
               </Button>
             </div>
           </div>
