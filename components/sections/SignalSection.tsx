@@ -78,6 +78,12 @@ const translateStatus = (raw: string | null) => {
 const fmtSec = (sec: number | null) => {
   if (sec === null || sec === undefined) return "-";
   if (!Number.isFinite(sec)) return "-";
+  if (sec >= 600) return "10분+";
+  if (sec >= 60) {
+    const min = Math.floor(sec / 60);
+    const rem = Math.round(sec % 60);
+    return `${min}분 ${rem}초`;
+  }
   return sec.toFixed(1) + "초";
 };
 
