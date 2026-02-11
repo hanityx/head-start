@@ -10,6 +10,12 @@ export type SpatItem = {
   phaseKey?: string | null;
 };
 
+export type RateLimitInfo = {
+  limit: number | null;
+  remaining: number | null;
+  resetSec: number | null;
+};
+
 export type SpatResponse = {
   itstId: string;
   itstNm: string | null;
@@ -21,9 +27,10 @@ export type SpatResponse = {
   items: SpatItem[];
   fetchedAtKst?: string;
   upstream?: {
-    timing?: { status?: number };
-    phase?: { status?: number };
+    timing?: { status?: number; rateLimit?: RateLimitInfo | null };
+    phase?: { status?: number; rateLimit?: RateLimitInfo | null };
   };
+  quota?: RateLimitInfo | null;
   note?: string;
 };
 

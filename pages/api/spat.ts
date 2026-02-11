@@ -11,13 +11,21 @@ import {
   toKstMsString,
 } from "@/lib/utils";
 import { loadItstMeta } from "@/lib/itstMeta";
-import { logDebug, logError } from "@/lib/logger";
+import { logDebug, logError, logInfo, logWarn } from "@/lib/logger";
 import type { SpatResponse } from "@/lib/types";
 
 const ENDPOINT_TIMING =
   "https://t-data.seoul.go.kr/apig/apiman-gateway/tapi/v2xSignalPhaseTimingInformation/1.0";
 const ENDPOINT_PHASE =
   "https://t-data.seoul.go.kr/apig/apiman-gateway/tapi/v2xSignalPhaseInformation/1.0";
+
+const toNumberOrNull = (value: string | null) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+const formatQuota = (q: { limit: string | null; remaining: string | null; reset: string | null }) =>
+  `limit=${q.limit ?? "-"} remaining=${q.remaining ?? "-"} resetSec=${q.reset ?? "-"}`;
 
 export default async function handler(
   req: NextApiRequest,
@@ -42,7 +50,7 @@ export default async function handler(
     const timeoutMs = Number.isFinite(timeoutMsRaw)
       ? Math.max(2000, timeoutMsRaw)
       : 25000;
-    logDebug(`GET /api/spat itstId=${itstId} timeoutMs=${timeoutMs}`);
+    logInfo(`[spat] req itstId=${itstId} timeoutMs=${timeoutMs}`);
 
     const urlTiming = buildUpstreamUrl(ENDPOINT_TIMING, {
       apiKey,
@@ -67,7 +75,17 @@ export default async function handler(
       fetchJsonWithTimeout(urlPhase, timeoutMs),
     ]);
 
+    logInfo(
+      `[spat] upstream itstId=${itstId} timingStatus=${timing.status} phaseStatus=${phase.status} ` +
+        `timingQuota(${formatQuota(timing.rateLimit)}) phaseQuota(${formatQuota(phase.rateLimit)})`
+    );
+
     if (!timing.json) {
+      logError(
+        `[spat] non-json timing itstId=${itstId} status=${timing.status} body=${String(
+          timing.text || ""
+        ).slice(0, 300)}`
+      );
       return res.status(502).json({
         error: "timing upstream non-json",
         upstreamStatus: timing.status,
@@ -75,6 +93,11 @@ export default async function handler(
       });
     }
     if (!phase.json) {
+      logError(
+        `[spat] non-json phase itstId=${itstId} status=${phase.status} body=${String(
+          phase.text || ""
+        ).slice(0, 300)}`
+      );
       return res.status(502).json({
         error: "phase upstream non-json",
         upstreamStatus: phase.status,
@@ -86,6 +109,9 @@ export default async function handler(
     const phaseRecords = findFirstArrayPayload(phase.json);
 
     if (!Array.isArray(timingRecords) || !Array.isArray(phaseRecords)) {
+      logError(
+        `[spat] unexpected shape itstId=${itstId} timingStatus=${timing.status} phaseStatus=${phase.status}`
+      );
       return res.status(502).json({
         error: "unexpected upstream shape (array not found)",
         timingStatus: timing.status,
@@ -119,6 +145,11 @@ export default async function handler(
     );
 
     logDebug(`[data] timing=${!!latestTiming} phase=${!!latestPhase}`);
+    if (!latestTiming || !latestPhase) {
+      logWarn(
+        `[spat] missing latest record itstId=${itstId} latestTiming=${!!latestTiming} latestPhase=${!!latestPhase}`
+      );
+    }
 
     const trsmMs = Math.max(
       parseTransmissionTimeMs(latestTiming),
@@ -141,6 +172,21 @@ export default async function handler(
       lon: null,
     };
     const trsmKst = trsmMs ? toKstMsString(trsmMs) : null;
+    const timingQuota = {
+      limit: toNumberOrNull(timing.rateLimit.limit),
+      remaining: toNumberOrNull(timing.rateLimit.remaining),
+      resetSec: toNumberOrNull(timing.rateLimit.reset),
+    };
+    const phaseQuota = {
+      limit: toNumberOrNull(phase.rateLimit.limit),
+      remaining: toNumberOrNull(phase.rateLimit.remaining),
+      resetSec: toNumberOrNull(phase.rateLimit.reset),
+    };
+    const quota = {
+      limit: timingQuota.limit ?? phaseQuota.limit,
+      remaining: timingQuota.remaining ?? phaseQuota.remaining,
+      resetSec: timingQuota.resetSec ?? phaseQuota.resetSec,
+    };
 
     const payload: SpatResponse = {
       itstId,
@@ -156,12 +202,18 @@ export default async function handler(
 
       fetchedAtKst: nowKstString(),
       upstream: {
-        timing: { status: timing.status },
-        phase: { status: phase.status },
+        timing: { status: timing.status, rateLimit: timingQuota },
+        phase: { status: phase.status, rateLimit: phaseQuota },
       },
+      quota,
       note: "잔여시간(*RmdrCs)은 '현재 켜진 신호' 기준입니다. '다음 보행 시작까지 남은 시간'은 직접 제공되지 않으며, 관측 기반 추정이 필요합니다.",
     };
 
+    logInfo(
+      `[spat] ok itstId=${itstId} items=${items.length} ageSec=${ageSec ?? "-"} quotaRemaining=${
+        quota.remaining ?? "-"
+      }`
+    );
     res.status(200).json(payload);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
