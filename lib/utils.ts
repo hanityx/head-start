@@ -1,4 +1,4 @@
-import { logDebug } from "@/lib/logger";
+import { logDebug, logWarn } from "@/lib/logger";
 
 export function nowKstString(withMs = false) {
   const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
@@ -71,6 +71,41 @@ export type MergedItem = {
   phaseKey: string | null;
 };
 
+export type RateLimitInfo = {
+  limit: string | null;
+  remaining: string | null;
+  reset: string | null;
+};
+
+export type FetchJsonResult = {
+  ok: boolean;
+  status: number;
+  text: string;
+  json: unknown | null;
+  rateLimit: RateLimitInfo;
+};
+
+function pickRateLimitInfo(headers: unknown): RateLimitInfo {
+  const get = (name: string) => {
+    if (!headers || typeof headers !== "object") return null;
+    if (!("get" in headers) || typeof (headers as { get?: unknown }).get !== "function") {
+      return null;
+    }
+    try {
+      const value = (headers as { get: (key: string) => string | null }).get(name);
+      return value ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  return {
+    limit: get("x-ratelimit-limit"),
+    remaining: get("x-ratelimit-remaining"),
+    reset: get("x-ratelimit-reset"),
+  };
+}
+
 export function parseTransmissionTimeMs(rec: unknown): number {
   const obj =
     rec && typeof rec === "object"
@@ -129,7 +164,10 @@ export function findFirstArrayPayload(root: unknown): unknown[] | null {
   return null;
 }
 
-export async function fetchJsonWithTimeout(url: string, timeoutMs: number) {
+export async function fetchJsonWithTimeout(
+  url: string,
+  timeoutMs: number
+): Promise<FetchJsonResult> {
   const maskedUrl = maskSensitiveUrl(url);
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
@@ -155,7 +193,13 @@ export async function fetchJsonWithTimeout(url: string, timeoutMs: number) {
       const msg = e instanceof Error ? e.message : String(e);
       logDebug(`[upstream json parse error] ${msg}`);
     }
-    return { ok: res.ok, status: res.status, text, json };
+    return {
+      ok: res.ok,
+      status: res.status,
+      text,
+      json,
+      rateLimit: pickRateLimitInfo((res as { headers?: unknown }).headers),
+    };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     logDebug(`[fetch error] ${msg}`);
@@ -210,7 +254,21 @@ export function timingRawToSeconds(raw: unknown): number | null {
   if (raw === null || raw === undefined) return null;
   const n = Number(raw);
   if (!Number.isFinite(n)) return null;
-  return n / 10;
+  const byDeci = n / 10;
+  const MAX_REASONABLE_SEC = 600; // 10분 초과는 이상치로 간주
+  if (byDeci <= MAX_REASONABLE_SEC) return byDeci;
+
+  // 간헐적으로 단위가 다르게 들어올 가능성 대비(centisecond fallback)
+  const byCenti = n / 100;
+  if (byCenti <= MAX_REASONABLE_SEC) {
+    logWarn(
+      `[timingRawToSeconds] fallback unit raw=${n} deci=${byDeci} centi=${byCenti}`
+    );
+    return byCenti;
+  }
+
+  logWarn(`[timingRawToSeconds] drop outlier raw=${n} sec=${byDeci}`);
+  return null;
 }
 
 export function extractTimingItems(

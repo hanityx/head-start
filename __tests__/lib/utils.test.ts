@@ -34,6 +34,13 @@ describe("Utility Functions", () => {
       expect(timingRawToSeconds(undefined)).toBeNull();
       expect(timingRawToSeconds("abc")).toBeNull();
     });
+
+    it("should fallback or drop outlier values", () => {
+      // 35985/10=3598.5(이상치) -> /100=359.85로 보정
+      expect(timingRawToSeconds(35985)).toBeCloseTo(359.85, 2);
+      // /10, /100 모두 과도하게 큰 값은 폐기
+      expect(timingRawToSeconds(9999999)).toBeNull();
+    });
   });
 
   describe("parseTransmissionTimeMs", () => {
