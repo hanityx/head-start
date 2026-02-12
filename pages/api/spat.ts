@@ -3,6 +3,7 @@ import {
   buildUpstreamUrl,
   extractPhaseStatus,
   extractTimingItems,
+  type FetchJsonResult,
   fetchJsonWithTimeout,
   findFirstArrayPayload,
   mergeItems,
@@ -27,6 +28,35 @@ const toNumberOrNull = (value: string | null) => {
 const formatQuota = (q: { limit: string | null; remaining: string | null; reset: string | null }) =>
   `limit=${q.limit ?? "-"} remaining=${q.remaining ?? "-"} resetSec=${q.reset ?? "-"}`;
 
+type KeySource = "primary" | "sub";
+
+const isRateLimited = (result: FetchJsonResult) => {
+  if (result.status === 429) return true;
+  const body = result.json;
+  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+  const payload = body as Record<string, unknown>;
+  const responseCode = Number(payload.responseCode ?? payload.code ?? payload.status);
+  const failureCode = Number(payload.failureCode);
+  const message = String(payload.message ?? "").toLowerCase();
+  return responseCode === 429 || failureCode === 10005 || message.includes("rate limit");
+};
+
+const readApiKeys = (): Array<{ source: KeySource; value: string }> => {
+  const primary = String(process.env.TDATA_API_KEY || "").trim();
+  const sub = String(process.env.TDATA_API_KEY_SUB || "").trim();
+  const out: Array<{ source: KeySource; value: string }> = [];
+  const seen = new Set<string>();
+  for (const candidate of [
+    { source: "primary" as const, value: primary },
+    { source: "sub" as const, value: sub },
+  ]) {
+    if (!candidate.value || seen.has(candidate.value)) continue;
+    seen.add(candidate.value);
+    out.push(candidate);
+  }
+  return out;
+};
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -39,10 +69,10 @@ export default async function handler(
     const itstId = String(req.query.itstId || "").trim();
     if (!itstId) return res.status(400).json({ error: "missing itstId" });
 
-    const apiKey = String(process.env.TDATA_API_KEY || "").trim();
-    if (!apiKey) {
+    const apiKeys = readApiKeys();
+    if (!apiKeys.length) {
       return res.status(400).json({
-        error: "missing apiKey (set TDATA_API_KEY env)",
+        error: "missing apiKey (set TDATA_API_KEY and optional TDATA_API_KEY_SUB env)",
       });
     }
 
@@ -52,33 +82,69 @@ export default async function handler(
       : 25000;
     logInfo(`[spat] req itstId=${itstId} timeoutMs=${timeoutMs}`);
 
-    const urlTiming = buildUpstreamUrl(ENDPOINT_TIMING, {
-      apiKey,
-      itstId,
-      type: "json",
-      pageNo: 1,
-      numOfRows: 10,
-    });
-    const urlPhase = buildUpstreamUrl(ENDPOINT_PHASE, {
-      apiKey,
-      itstId,
-      type: "json",
-      pageNo: 1,
-      numOfRows: 10,
-    });
+    let timing: FetchJsonResult | null = null;
+    let phase: FetchJsonResult | null = null;
+    let keySource: KeySource = apiKeys[0].source;
 
-    logDebug(`[timing URL] ${urlTiming.replace(apiKey, "***")}`);
-    logDebug(`[phase URL] ${urlPhase.replace(apiKey, "***")}`);
+    for (let i = 0; i < apiKeys.length; i += 1) {
+      const { source, value: apiKey } = apiKeys[i];
+      const urlTiming = buildUpstreamUrl(ENDPOINT_TIMING, {
+        apiKey,
+        itstId,
+        type: "json",
+        pageNo: 1,
+        numOfRows: 10,
+      });
+      const urlPhase = buildUpstreamUrl(ENDPOINT_PHASE, {
+        apiKey,
+        itstId,
+        type: "json",
+        pageNo: 1,
+        numOfRows: 10,
+      });
 
-    const [timing, phase] = await Promise.all([
-      fetchJsonWithTimeout(urlTiming, timeoutMs),
-      fetchJsonWithTimeout(urlPhase, timeoutMs),
-    ]);
+      logDebug(`[timing URL][${source}] ${urlTiming.replace(apiKey, "***")}`);
+      logDebug(`[phase URL][${source}] ${urlPhase.replace(apiKey, "***")}`);
 
-    logInfo(
-      `[spat] upstream itstId=${itstId} timingStatus=${timing.status} phaseStatus=${phase.status} ` +
-        `timingQuota(${formatQuota(timing.rateLimit)}) phaseQuota(${formatQuota(phase.rateLimit)})`
-    );
+      const [timingRes, phaseRes] = await Promise.all([
+        fetchJsonWithTimeout(urlTiming, timeoutMs),
+        fetchJsonWithTimeout(urlPhase, timeoutMs),
+      ]);
+
+      logInfo(
+        `[spat] upstream itstId=${itstId} keySource=${source} timingStatus=${timingRes.status} phaseStatus=${phaseRes.status} ` +
+          `timingQuota(${formatQuota(timingRes.rateLimit)}) phaseQuota(${formatQuota(phaseRes.rateLimit)})`
+      );
+
+      const limited = isRateLimited(timingRes) || isRateLimited(phaseRes);
+      const hasFallback = i < apiKeys.length - 1;
+      if (limited && hasFallback) {
+        logWarn(
+          `[spat] keySource=${source} rate-limited, retrying with fallback key`
+        );
+        continue;
+      }
+
+      timing = timingRes;
+      phase = phaseRes;
+      keySource = source;
+      break;
+    }
+
+    if (!timing || !phase) {
+      throw new Error("failed to fetch upstream responses");
+    }
+
+    if (isRateLimited(timing) || isRateLimited(phase)) {
+      return res.status(429).json({
+        error: "upstream rate limit exceeded (all configured API keys exhausted)",
+        upstream: {
+          keySource,
+          timing: { status: timing.status, rateLimit: timing.rateLimit },
+          phase: { status: phase.status, rateLimit: phase.rateLimit },
+        },
+      });
+    }
 
     if (!timing.json) {
       logError(
@@ -202,6 +268,7 @@ export default async function handler(
 
       fetchedAtKst: nowKstString(),
       upstream: {
+        keySource,
         timing: { status: timing.status, rateLimit: timingQuota },
         phase: { status: phase.status, rateLimit: phaseQuota },
       },
@@ -210,7 +277,9 @@ export default async function handler(
     };
 
     logInfo(
-      `[spat] ok itstId=${itstId} items=${items.length} ageSec=${ageSec ?? "-"} quotaRemaining=${
+      `[spat] ok itstId=${itstId} keySource=${keySource} items=${items.length} ageSec=${
+        ageSec ?? "-"
+      } quotaRemaining=${
         quota.remaining ?? "-"
       }`
     );
