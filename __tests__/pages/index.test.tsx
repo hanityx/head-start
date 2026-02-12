@@ -8,6 +8,8 @@ import {
   resetFetchMock,
 } from "@/test/testUtils";
 
+const TEST_NEARBY_ITST_ID = "900001";
+
 describe("Home Page", () => {
   const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
   beforeAll(() => {
@@ -166,15 +168,15 @@ describe("Home Page", () => {
     mockFetchJsonOnce({
       items: [
         {
-          itstId: "1560",
-          itstNm: "면목아이파크102동",
-          lat: 37.5813116,
-          lon: 127.0813421,
+          itstId: TEST_NEARBY_ITST_ID,
+          itstNm: "테스트교차로A",
+          lat: 37.5,
+          lon: 127.0,
           distanceM: 120.5,
         },
       ],
     });
-    mockFetchJsonOnce(makeSpatResponse({ itstId: "1560" }));
+    mockFetchJsonOnce(makeSpatResponse({ itstId: TEST_NEARBY_ITST_ID }));
 
     const getCurrentPosition = jest.fn(
       (
@@ -201,10 +203,63 @@ describe("Home Page", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue("1560")).toBeInTheDocument();
+      expect(screen.getByDisplayValue(TEST_NEARBY_ITST_ID)).toBeInTheDocument();
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/spat?itstId=1560")
+        expect.stringContaining(`/api/spat?itstId=${TEST_NEARBY_ITST_ID}`)
       );
+    });
+  });
+
+  it("should show and hide map preview when 지도보기 is clicked", async () => {
+    mockFetchJsonOnce({
+      items: [
+        {
+          itstId: TEST_NEARBY_ITST_ID,
+          itstNm: "테스트교차로A",
+          lat: 37.5,
+          lon: 127.0,
+          distanceM: 120.5,
+        },
+      ],
+    });
+
+    const getCurrentPosition = jest.fn(
+      (
+        success: (position: { coords: { latitude: number; longitude: number } }) => void
+      ) => success({ coords: { latitude: 37.5665, longitude: 126.978 } })
+    );
+
+    Object.defineProperty(global.navigator, "geolocation", {
+      configurable: true,
+      value: { getCurrentPosition },
+    });
+
+    render(<Home />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "현재 위치" }));
+      await flushPromises();
+    });
+
+    const mapButton = await screen.findByRole("button", { name: "지도보기" });
+    await act(async () => {
+      fireEvent.click(mapButton);
+      await flushPromises();
+    });
+
+    expect(
+      screen.getByTitle(`교차로 위치 지도-nearby-${TEST_NEARBY_ITST_ID}`)
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "지도 닫기" }));
+      await flushPromises();
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByTitle(`교차로 위치 지도-nearby-${TEST_NEARBY_ITST_ID}`)
+      ).not.toBeInTheDocument();
     });
   });
 
