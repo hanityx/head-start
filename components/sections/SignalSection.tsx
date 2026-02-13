@@ -292,7 +292,7 @@ export function SignalSection({
           </div>
 
           <div className="grid gap-3 sm:grid-cols-[minmax(190px,1.15fr)_80px_80px_auto] sm:items-end">
-            <label className="text-xs text-muted-foreground">
+            <label className="text-xs text-muted-foreground" data-tour="signal-input">
               교차로 ID
               {inlineItstNm ? ` · ${inlineItstNm}` : ""}
               <Input
@@ -354,6 +354,7 @@ export function SignalSection({
               <Button
                 size="sm"
                 className="shrink-0"
+                data-tour="signal-fetch"
                 onClick={fetchSpat}
                 disabled={isLoading}
               >
@@ -378,6 +379,7 @@ export function SignalSection({
                 size="sm"
                 className="shrink-0"
                 variant="outline"
+                data-tour="signal-auto"
                 onClick={() => setIsAuto((prev) => !prev)}
               >
                 {isAuto ? "자동 갱신 끄기" : "자동 갱신 켜기"}

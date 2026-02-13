@@ -43,3 +43,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local docs scratch
+docs/TODO.md
+
+# local cctv research artifacts
+local/cctv/
+docs/cctv-*.md
+data/cctv-*.json
+scripts/*cctv*.py
