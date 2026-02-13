@@ -27,6 +27,7 @@ export type SpatResponse = {
   items: SpatItem[];
   fetchedAtKst?: string;
   upstream?: {
+    keySource?: string;
     timing?: { status?: number; rateLimit?: RateLimitInfo | null };
     phase?: { status?: number; rateLimit?: RateLimitInfo | null };
   };

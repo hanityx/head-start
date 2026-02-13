@@ -7,9 +7,11 @@ import {
   resetFetchMock,
 } from "@/test/testUtils";
 
+const TEST_ITST_ID = "900001";
+
 jest.mock("@/lib/itstMeta", () => ({
   loadItstMeta: () =>
-    new Map([["1560", { itstNm: "테스트교차로", lat: 37.5, lon: 126.9 }]]),
+    new Map([["900001", { itstNm: "테스트교차로", lat: 37.5, lon: 126.9 }]]),
 }));
 
 describe("/api/spat", () => {
@@ -20,6 +22,11 @@ describe("/api/spat", () => {
   beforeEach(() => {
     resetFetchMock();
     process.env.TDATA_API_KEY = "test-key";
+    process.env.TDATA_API_KEY_SUB = "";
+    process.env.TDATA_API_KEY_SUB2 = "";
+    process.env.SPAT_ALLOWED_IPS = "";
+    process.env.SPAT_RATE_LIMIT_MAX = "";
+    process.env.SPAT_RATE_LIMIT_WINDOW_SEC = "";
   });
 
   it("returns 405 for non-GET", async () => {
@@ -39,7 +46,7 @@ describe("/api/spat", () => {
     const timing = {
       data: [
         {
-          itstId: "1560",
+          itstId: TEST_ITST_ID,
           trsmUtcTime: now,
           ntPdsgRmdrCs: 120,
         },
@@ -48,7 +55,7 @@ describe("/api/spat", () => {
     const phase = {
       data: [
         {
-          itstId: "1560",
+          itstId: TEST_ITST_ID,
           trsmUtcTime: now,
           ntPdsgStatNm: "protected-Movement-Allowed",
         },
@@ -60,7 +67,7 @@ describe("/api/spat", () => {
 
     const { req, res } = createMocks({
       method: "GET",
-      query: { itstId: "1560" },
+      query: { itstId: TEST_ITST_ID },
     });
 
     await handler(req, res);
@@ -74,12 +81,12 @@ describe("/api/spat", () => {
   it("does not include debug fields even when requested", async () => {
     const now = Date.now();
     const timing = {
-      data: [{ itstId: "1560", trsmUtcTime: now, ntPdsgRmdrCs: 120 }],
+      data: [{ itstId: TEST_ITST_ID, trsmUtcTime: now, ntPdsgRmdrCs: 120 }],
     };
     const phase = {
       data: [
         {
-          itstId: "1560",
+          itstId: TEST_ITST_ID,
           trsmUtcTime: now,
           ntPdsgStatNm: "protected-Movement-Allowed",
         },
@@ -91,7 +98,7 @@ describe("/api/spat", () => {
 
     const { req, res } = createMocks({
       method: "GET",
-      query: { itstId: "1560", debug: "true" },
+      query: { itstId: TEST_ITST_ID, debug: "true" },
     });
 
     await handler(req, res);
@@ -108,11 +115,171 @@ describe("/api/spat", () => {
 
     const { req, res } = createMocks({
       method: "GET",
-      query: { itstId: "1560" },
+      query: { itstId: TEST_ITST_ID },
     });
 
     await handler(req, res);
 
     expect(res._getStatusCode()).toBe(502);
+  });
+
+  it("falls back to sub api key when primary key is rate-limited", async () => {
+    process.env.TDATA_API_KEY = "primary-key";
+    process.env.TDATA_API_KEY_SUB = "sub-key";
+    process.env.TDATA_API_KEY_SUB2 = "";
+
+    const rateLimited = {
+      type: "Other",
+      responseCode: 429,
+      failureCode: 10005,
+      message: "Rate limit exceeded.",
+    };
+    const now = Date.now();
+    const timing = {
+      data: [{ itstId: TEST_ITST_ID, trsmUtcTime: now, ntPdsgRmdrCs: 120 }],
+    };
+    const phase = {
+      data: [
+        {
+          itstId: TEST_ITST_ID,
+          trsmUtcTime: now,
+          ntPdsgStatNm: "protected-Movement-Allowed",
+        },
+      ],
+    };
+
+    mockFetchJsonOnce(rateLimited, { ok: true, status: 200 });
+    mockFetchJsonOnce(rateLimited, { ok: true, status: 200 });
+    mockFetchJsonOnce(timing, { ok: true, status: 200 });
+    mockFetchJsonOnce(phase, { ok: true, status: 200 });
+
+    const { req, res } = createMocks({
+      method: "GET",
+      query: { itstId: TEST_ITST_ID },
+    });
+    await handler(req, res);
+
+    expect(res._getStatusCode()).toBe(200);
+
+    const fetchMock = ensureFetchMock();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls[0]).toContain("apikey=primary-key");
+    expect(urls[1]).toContain("apikey=primary-key");
+    expect(urls[2]).toContain("apikey=sub-key");
+    expect(urls[3]).toContain("apikey=sub-key");
+
+    const body = JSON.parse(res._getData());
+    expect(body.upstream?.keySource).toBe("sub");
+  });
+
+  it("falls back to sub2 api key when primary/sub are rate-limited", async () => {
+    process.env.TDATA_API_KEY = "primary-key";
+    process.env.TDATA_API_KEY_SUB = "sub-key";
+    process.env.TDATA_API_KEY_SUB2 = "sub2-key";
+
+    const rateLimited = {
+      type: "Other",
+      responseCode: 429,
+      failureCode: 10005,
+      message: "Rate limit exceeded.",
+    };
+    const now = Date.now();
+    const timing = {
+      data: [{ itstId: TEST_ITST_ID, trsmUtcTime: now, ntPdsgRmdrCs: 120 }],
+    };
+    const phase = {
+      data: [
+        {
+          itstId: TEST_ITST_ID,
+          trsmUtcTime: now,
+          ntPdsgStatNm: "protected-Movement-Allowed",
+        },
+      ],
+    };
+
+    mockFetchJsonOnce(rateLimited, { ok: true, status: 200 });
+    mockFetchJsonOnce(rateLimited, { ok: true, status: 200 });
+    mockFetchJsonOnce(rateLimited, { ok: true, status: 200 });
+    mockFetchJsonOnce(rateLimited, { ok: true, status: 200 });
+    mockFetchJsonOnce(timing, { ok: true, status: 200 });
+    mockFetchJsonOnce(phase, { ok: true, status: 200 });
+
+    const { req, res } = createMocks({
+      method: "GET",
+      query: { itstId: TEST_ITST_ID },
+    });
+    await handler(req, res);
+
+    expect(res._getStatusCode()).toBe(200);
+
+    const fetchMock = ensureFetchMock();
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls[0]).toContain("apikey=primary-key");
+    expect(urls[1]).toContain("apikey=primary-key");
+    expect(urls[2]).toContain("apikey=sub-key");
+    expect(urls[3]).toContain("apikey=sub-key");
+    expect(urls[4]).toContain("apikey=sub2-key");
+    expect(urls[5]).toContain("apikey=sub2-key");
+
+    const body = JSON.parse(res._getData());
+    expect(body.upstream?.keySource).toBe("sub2");
+  });
+
+  it("returns 403 when client ip is not in allowlist", async () => {
+    process.env.SPAT_ALLOWED_IPS = "127.0.0.1";
+
+    const { req, res } = createMocks({
+      method: "GET",
+      query: { itstId: TEST_ITST_ID },
+      headers: { "x-forwarded-for": "8.8.8.8" },
+    });
+    await handler(req, res);
+
+    expect(res._getStatusCode()).toBe(403);
+    const fetchMock = ensureFetchMock();
+    expect(fetchMock).toHaveBeenCalledTimes(0);
+  });
+
+  it("returns 429 when local per-ip rate limit is exceeded", async () => {
+    process.env.SPAT_RATE_LIMIT_MAX = "1";
+    process.env.SPAT_RATE_LIMIT_WINDOW_SEC = "60";
+
+    const now = Date.now();
+    const timing = {
+      data: [{ itstId: TEST_ITST_ID, trsmUtcTime: now, ntPdsgRmdrCs: 120 }],
+    };
+    const phase = {
+      data: [
+        {
+          itstId: TEST_ITST_ID,
+          trsmUtcTime: now,
+          ntPdsgStatNm: "protected-Movement-Allowed",
+        },
+      ],
+    };
+
+    mockFetchJsonOnce(timing, { ok: true, status: 200 });
+    mockFetchJsonOnce(phase, { ok: true, status: 200 });
+
+    const first = createMocks({
+      method: "GET",
+      query: { itstId: TEST_ITST_ID },
+      headers: { "x-forwarded-for": "9.9.9.9" },
+    });
+    await handler(first.req, first.res);
+    expect(first.res._getStatusCode()).toBe(200);
+
+    const second = createMocks({
+      method: "GET",
+      query: { itstId: TEST_ITST_ID },
+      headers: { "x-forwarded-for": "9.9.9.9" },
+    });
+    await handler(second.req, second.res);
+    expect(second.res._getStatusCode()).toBe(429);
+
+    const fetchMock = ensureFetchMock();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

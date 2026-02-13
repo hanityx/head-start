@@ -30,6 +30,76 @@ const LOCATION_STRICT_OPTIONS: PositionOptions = {
 const INITIAL_RESULT_COUNT = 5;
 const RESULT_STEP = 5;
 const MAX_RESULT_COUNT = 50;
+const MAP_ZOOM_LEVEL = 17;
+const MAP_LAT_DELTA = 0.0022;
+const MAP_LON_DELTA = 0.0032;
+
+const clampCoord = (value: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, value));
+
+const buildOsmEmbedUrl = (lat: number, lon: number) => {
+  const safeLat = clampCoord(lat, -85, 85);
+  const safeLon = clampCoord(lon, -180, 180);
+  const bboxLeft = clampCoord(safeLon - MAP_LON_DELTA, -180, 180);
+  const bboxRight = clampCoord(safeLon + MAP_LON_DELTA, -180, 180);
+  const bboxBottom = clampCoord(safeLat - MAP_LAT_DELTA, -85, 85);
+  const bboxTop = clampCoord(safeLat + MAP_LAT_DELTA, -85, 85);
+
+  const params = new URLSearchParams({
+    bbox: `${bboxLeft},${bboxBottom},${bboxRight},${bboxTop}`,
+    layer: "mapnik",
+    marker: `${safeLat},${safeLon}`,
+  });
+  return `https://www.openstreetmap.org/export/embed.html?${params.toString()}`;
+};
+
+const buildOsmMapUrl = (lat: number, lon: number) => {
+  const safeLat = clampCoord(lat, -85, 85);
+  const safeLon = clampCoord(lon, -180, 180);
+  return `https://www.openstreetmap.org/?mlat=${safeLat}&mlon=${safeLon}#map=${MAP_ZOOM_LEVEL}/${safeLat}/${safeLon}`;
+};
+
+function InlineMapPreview({
+  mapKey,
+  itstNm,
+  lat,
+  lon,
+}: {
+  mapKey: string;
+  itstNm: string;
+  lat: number;
+  lon: number;
+}) {
+  return (
+    <div className="rounded-md border border-border/60 bg-muted/10 p-3">
+      <div className="mb-2 text-xs font-semibold text-foreground">
+        지도 미리보기 · {itstNm}
+      </div>
+      <div className="overflow-hidden rounded-md border border-border/60">
+        <iframe
+          title={`교차로 위치 지도-${mapKey}`}
+          src={buildOsmEmbedUrl(lat, lon)}
+          className="h-64 w-full"
+          loading="lazy"
+          referrerPolicy="no-referrer-when-downgrade"
+        />
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <span>
+          위도 {lat.toFixed(6)}, 경도 {lon.toFixed(6)}
+        </span>
+        <a
+          href={buildOsmMapUrl(lat, lon)}
+          target="_blank"
+          rel="noreferrer"
+          className="underline underline-offset-2"
+        >
+          큰 지도에서 보기
+        </a>
+      </div>
+    </div>
+  );
+}
 
 export function NearbySection({
   onSelectItstId,
@@ -46,6 +116,12 @@ export function NearbySection({
   const [searchLoading, setSearchLoading] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
   const [resultCount, setResultCount] = useState(INITIAL_RESULT_COUNT);
+  const [mapTarget, setMapTarget] = useState<{
+    key: string;
+    itstNm: string;
+    lat: number;
+    lon: number;
+  } | null>(null);
   const [favorites, setFavorites] = useState<
     { itstId: string; itstNm: string; lat: number; lon: number }[]
   >([]);
@@ -270,6 +346,15 @@ export function NearbySection({
     setFavorites(favorites.filter((f) => f.itstId !== itstId));
   };
 
+  const toggleMapTarget = (target: {
+    key: string;
+    itstNm: string;
+    lat: number;
+    lon: number;
+  }) => {
+    setMapTarget((prev) => (prev?.key === target.key ? null : target));
+  };
+
   const canLoadMore = Boolean(
     nearbyData?.items &&
     nearbyData.items.length > 0 &&
@@ -285,7 +370,7 @@ export function NearbySection({
   };
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-4" data-tour="nearby-section">
       <Card className="border border-border/70">
         <CardHeader>
           <CardTitle className="text-base font-semibold">
@@ -296,7 +381,10 @@ export function NearbySection({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="rounded-md border border-border/60 bg-muted/20 p-3">
+          <div
+            className="rounded-md border border-border/60 bg-muted/20 p-3"
+            data-tour="nearby-location"
+          >
             <div className="mb-3 text-xs font-semibold text-foreground">
               위치 정하기
             </div>
@@ -343,7 +431,10 @@ export function NearbySection({
             </Alert>
           )}
 
-          <div className="rounded-md border border-border/60 bg-muted/20 p-3">
+          <div
+            className="rounded-md border border-border/60 bg-muted/20 p-3"
+            data-tour="nearby-select"
+          >
             <div className="mb-3 flex items-center justify-between gap-2">
               <div className="text-xs font-semibold text-foreground">
                 교차로 선택
@@ -374,34 +465,60 @@ export function NearbySection({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {nearbyData.items.map((it: NearbyItem) => (
-                    <Card key={it.itstId} className="border border-border/60">
-                      <CardContent className="space-y-2 pt-4">
-                        <div className="text-sm font-semibold">
-                          {it.itstNm} (ID: {it.itstId})
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          거리: 약 {Math.round(it.distanceM)}m
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => onSelectItstId(it.itstId)}
-                          >
-                            이 ID로 조회
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => addFavorite(it)}
-                          >
-                            즐겨찾기 추가
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                  {nearbyData.items.map((it: NearbyItem) => {
+                    const mapKey = `nearby-${it.itstId}`;
+                    const isMapOpen = mapTarget?.key === mapKey;
+                    return (
+                      <Card key={it.itstId} className="border border-border/60">
+                        <CardContent className="space-y-2 pt-4">
+                          <div className="text-sm font-semibold">
+                            {it.itstNm} (ID: {it.itstId})
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            거리: 약 {Math.round(it.distanceM)}m
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onSelectItstId(it.itstId)}
+                            >
+                              이 ID로 조회
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => addFavorite(it)}
+                            >
+                              즐겨찾기 추가
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={isMapOpen ? "secondary" : "ghost"}
+                              onClick={() =>
+                                toggleMapTarget({
+                                  key: mapKey,
+                                  itstNm: it.itstNm,
+                                  lat: it.lat,
+                                  lon: it.lon,
+                                })
+                              }
+                            >
+                              {isMapOpen ? "지도 닫기" : "지도보기"}
+                            </Button>
+                          </div>
+                          {isMapOpen && (
+                            <InlineMapPreview
+                              mapKey={mapKey}
+                              itstNm={it.itstNm}
+                              lat={it.lat}
+                              lon={it.lon}
+                            />
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                   {canLoadMore && (
                     <div className="flex justify-center pt-1">
                       <Button
@@ -443,31 +560,57 @@ export function NearbySection({
                     즐겨찾기한 교차로가 없습니다.
                   </div>
                 ) : (
-                  favorites.map((f) => (
-                    <Card key={f.itstId} className="border border-border/60">
-                      <CardContent className="flex items-center justify-between gap-3 pt-4">
-                        <div className="text-sm font-semibold">
-                          {f.itstNm} (ID: {f.itstId})
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => onSelectItstId(f.itstId)}
-                          >
-                            조회
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => removeFavorite(f.itstId)}
-                          >
-                            제거
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))
+                  favorites.map((f) => {
+                    const mapKey = `favorite-${f.itstId}`;
+                    const isMapOpen = mapTarget?.key === mapKey;
+                    return (
+                      <Card key={f.itstId} className="border border-border/60">
+                        <CardContent className="space-y-2 pt-4">
+                          <div className="text-sm font-semibold">
+                            {f.itstNm} (ID: {f.itstId})
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onSelectItstId(f.itstId)}
+                            >
+                              조회
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={isMapOpen ? "secondary" : "ghost"}
+                              onClick={() =>
+                                toggleMapTarget({
+                                  key: mapKey,
+                                  itstNm: f.itstNm,
+                                  lat: f.lat,
+                                  lon: f.lon,
+                                })
+                              }
+                            >
+                              {isMapOpen ? "지도 닫기" : "지도보기"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => removeFavorite(f.itstId)}
+                            >
+                              제거
+                            </Button>
+                          </div>
+                          {isMapOpen && (
+                            <InlineMapPreview
+                              mapKey={mapKey}
+                              itstNm={f.itstNm}
+                              lat={f.lat}
+                              lon={f.lon}
+                            />
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })
                 )}
               </div>
             )}
