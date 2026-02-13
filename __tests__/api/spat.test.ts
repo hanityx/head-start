@@ -78,6 +78,42 @@ describe("/api/spat", () => {
     expect(data.itstNm).toBe("테스트교차로");
   });
 
+  it("accepts timeoutMs=0 (no abort timeout) and still returns 200", async () => {
+    const now = Date.now();
+    const timing = {
+      data: [
+        {
+          itstId: TEST_ITST_ID,
+          trsmUtcTime: now,
+          ntPdsgRmdrCs: 120,
+        },
+      ],
+    };
+    const phase = {
+      data: [
+        {
+          itstId: TEST_ITST_ID,
+          trsmUtcTime: now,
+          ntPdsgStatNm: "protected-Movement-Allowed",
+        },
+      ],
+    };
+
+    mockFetchJsonOnce(timing, { ok: true, status: 200 });
+    mockFetchJsonOnce(phase, { ok: true, status: 200 });
+
+    const { req, res } = createMocks({
+      method: "GET",
+      query: { itstId: TEST_ITST_ID, timeoutMs: "0" },
+    });
+
+    await handler(req, res);
+
+    expect(res._getStatusCode()).toBe(200);
+    const body = JSON.parse(res._getData());
+    expect(body.items.length).toBeGreaterThan(0);
+  });
+
   it("does not include debug fields even when requested", async () => {
     const now = Date.now();
     const timing = {

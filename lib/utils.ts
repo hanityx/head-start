@@ -170,7 +170,8 @@ export async function fetchJsonWithTimeout(
 ): Promise<FetchJsonResult> {
   const maskedUrl = maskSensitiveUrl(url);
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), timeoutMs);
+  const hasTimeout = timeoutMs > 0;
+  const t = hasTimeout ? setTimeout(() => controller.abort(), timeoutMs) : null;
   try {
     logDebug(`[fetch] ${maskedUrl}`);
     const res = await fetch(url, {
@@ -205,7 +206,7 @@ export async function fetchJsonWithTimeout(
     logDebug(`[fetch error] ${msg}`);
     throw e;
   } finally {
-    clearTimeout(t);
+    if (t) clearTimeout(t);
   }
 }
 

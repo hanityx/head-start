@@ -189,7 +189,7 @@ export default async function handler(
 
     const timeoutMsRaw = Number(req.query.timeoutMs);
     const timeoutMs = Number.isFinite(timeoutMsRaw)
-      ? Math.max(2000, timeoutMsRaw)
+      ? Math.max(0, timeoutMsRaw)
       : 25000;
     logInfo(`[spat] req itstId=${itstId} timeoutMs=${timeoutMs}`);
 

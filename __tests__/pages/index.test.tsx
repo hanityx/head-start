@@ -327,7 +327,7 @@ describe("Home Page", () => {
 
     await waitFor(() => {
       expect(screen.getByText("테스트교차로")).toBeInTheDocument();
-      expect(screen.getByText("북측 보행")).toBeInTheDocument();
+      expect(screen.getAllByText("북측 보행").length).toBeGreaterThan(0);
     });
   });
 });

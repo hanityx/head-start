@@ -88,11 +88,11 @@ const fmtSec = (sec: number | null) => {
 };
 
 const TIMEOUT_SEC_DEFAULT = 25;
-const TIMEOUT_SEC_MIN = 2;
+const TIMEOUT_SEC_MIN = 0;
 const TIMEOUT_SEC_MAX = 60;
 
 const INTERVAL_SEC_DEFAULT = 3;
-const INTERVAL_SEC_MIN = 1;
+const INTERVAL_SEC_MIN = 0;
 const INTERVAL_SEC_MAX = 30;
 
 const clampInt = (value: number, min: number, max: number) =>
@@ -236,6 +236,15 @@ export function SignalSection({
       return;
     }
 
+    if (intervalMs <= 0) {
+      fetchSpat();
+      if (autoTimerRef.current) {
+        clearInterval(autoTimerRef.current);
+        autoTimerRef.current = null;
+      }
+      return;
+    }
+
     const ms = Math.max(700, intervalMs);
     fetchSpat();
     autoTimerRef.current = setInterval(fetchSpat, ms);
@@ -262,6 +271,131 @@ export function SignalSection({
     if (spatData && spatData.itstId === trimmed && spatData.itstNm) return spatData.itstNm;
     return ITST_NAME_BY_ID.get(trimmed) ?? null;
   }, [itstId, spatData]);
+
+  const renderSignalList = ({
+    useCorrected,
+    title,
+    description,
+    showRefresh,
+  }: {
+    useCorrected: boolean;
+    title: string;
+    description: string;
+    showRefresh?: boolean;
+  }) => (
+    <Card className="border border-border/70">
+      <CardHeader>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-base font-semibold">{title}</CardTitle>
+          {showRefresh ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={fetchSpat}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  갱신 중
+                </>
+              ) : (
+                "새로고침"
+              )}
+            </Button>
+          ) : null}
+        </div>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {Array.from({
+              length:
+                spatData?.items?.length && spatData.items.length > 0
+                  ? spatData.items.length
+                  : 4,
+            }).map((_, idx) => (
+              <Card
+                key={idx}
+                className="animate-in fade-in duration-300 border border-border/60"
+                style={{ animationDelay: `${idx * 70}ms` }}
+              >
+                <CardContent className="space-y-3 pt-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <Skeleton className="h-4 w-28" />
+                      <Skeleton className="h-5 w-16" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Skeleton className="h-7 w-7 rounded-full" />
+                      <Skeleton className="h-6 w-20 rounded-full" />
+                      <Skeleton className="h-6 w-14 rounded-full" />
+                    </div>
+                    <Skeleton className="h-10 w-28" />
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : !spatData ? null : !spatData.items ||
+          spatData.items.length === 0 ? (
+          <div className="rounded-md border border-border/60 bg-muted/40 p-3 text-xs text-muted-foreground">
+            표시할 신호 항목이 없습니다. (해당 교차로가 V2X 제공 대상인지,
+            또는 현재 시각에 수신이 있는지 확인)
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {spatData.items.map((it: SpatItem) => {
+              const sourceSec = useCorrected ? it.sec : it.secAtMsg;
+              const sec =
+                sourceSec === null || sourceSec === undefined
+                  ? null
+                  : Number(Math.max(0, sourceSec).toFixed(1));
+              const statusInfo = translateStatus(it.status);
+              const stableKey =
+                it.key ??
+                it.phaseKey ??
+                `${it.dirCode ?? "dir"}-${it.movCode ?? "mov"}-${it.title}`;
+              const tone =
+                statusInfo?.color === "red"
+                  ? "red"
+                  : statusInfo?.color === "green"
+                    ? "green"
+                    : statusInfo?.color === "yellow"
+                      ? "yellow"
+                      : "gray";
+              const emphasis =
+                sec !== null && sec !== undefined && sec < 10
+                  ? "critical"
+                  : "normal";
+
+              return (
+                <SignalCountdownCard
+                  key={`${useCorrected ? "corr" : "raw"}-${stableKey}`}
+                  title={it.title}
+                  guide={explainSignal(it)}
+                  statusLabel={statusInfo?.text ?? "상태 확인"}
+                  tone={tone}
+                  timeLabel={sec === null ? "-" : fmtSec(sec)}
+                  emphasis={emphasis}
+                  size="md"
+                  isLoading={isLoading}
+                />
+              );
+            })}
+          </div>
+        )}
+
+        {error && showRefresh ? (
+          <Alert variant="destructive">
+            <AlertTitle>데이터 수신 실패</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
 
   return (
     <section className="space-y-4">
@@ -386,6 +520,9 @@ export function SignalSection({
               </Button>
             </div>
           </div>
+          <div className="rounded-md border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+            `대기(초)`/`자동(초)`은 0 설정 가능. 0일 때 자동 갱신은 반복 없이 1회 조회만 수행됩니다.
+          </div>
 
           {isLoading && !spatData ? (
             <div className="grid gap-2 sm:grid-cols-2">
@@ -414,119 +551,19 @@ export function SignalSection({
         </CardContent>
       </Card>
 
-      <Card className="border border-border/70">
-        <CardHeader>
-          <div className="flex items-center justify-between gap-2">
-            <CardTitle className="text-base font-semibold">
-              신호 리스트
-            </CardTitle>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={fetchSpat}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  갱신 중
-                </>
-              ) : (
-                "새로고침"
-              )}
-            </Button>
-          </div>
-          <CardDescription>
-            아이콘은 동작(보행/직진/좌회전), 옆 배지는 방향(동/서/남/북)입니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {isLoading ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {Array.from({
-                length:
-                  spatData?.items?.length && spatData.items.length > 0
-                    ? spatData.items.length
-                    : 4,
-              }).map((_, idx) => (
-                <Card
-                  key={idx}
-                  className="animate-in fade-in duration-300 border border-border/60"
-                  style={{ animationDelay: `${idx * 70}ms` }}
-                >
-                  <CardContent className="space-y-3 pt-4">
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <Skeleton className="h-4 w-28" />
-                        <Skeleton className="h-5 w-16" />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Skeleton className="h-7 w-7 rounded-full" />
-                        <Skeleton className="h-6 w-20 rounded-full" />
-                        <Skeleton className="h-6 w-14 rounded-full" />
-                      </div>
-                      <Skeleton className="h-10 w-28" />
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : !spatData ? null : !spatData.items ||
-            spatData.items.length === 0 ? (
-            <div className="rounded-md border border-border/60 bg-muted/40 p-3 text-xs text-muted-foreground">
-              표시할 신호 항목이 없습니다. (해당 교차로가 V2X 제공 대상인지,
-              또는 현재 시각에 수신이 있는지 확인)
-            </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {spatData.items.map((it: SpatItem) => {
-                const sec =
-                  it.sec === null || it.sec === undefined
-                    ? null
-                    : Number(Math.max(0, it.sec).toFixed(1));
-                const statusInfo = translateStatus(it.status);
-                const stableKey =
-                  it.key ??
-                  it.phaseKey ??
-                  `${it.dirCode ?? "dir"}-${it.movCode ?? "mov"}-${it.title}`;
-                const tone =
-                  statusInfo?.color === "red"
-                    ? "red"
-                    : statusInfo?.color === "green"
-                      ? "green"
-                      : statusInfo?.color === "yellow"
-                        ? "yellow"
-                        : "gray";
-                const emphasis =
-                  sec !== null && sec !== undefined && sec < 10
-                    ? "critical"
-                    : "normal";
-
-                return (
-                  <SignalCountdownCard
-                    key={stableKey}
-                    title={it.title}
-                    guide={explainSignal(it)}
-                    statusLabel={statusInfo?.text ?? "상태 확인"}
-                    tone={tone}
-                    timeLabel={sec === null ? "-" : fmtSec(sec)}
-                    emphasis={emphasis}
-                    size="md"
-                    isLoading={isLoading}
-                  />
-                );
-              })}
-            </div>
-          )}
-
-          {error && (
-            <Alert variant="destructive">
-              <AlertTitle>데이터 수신 실패</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-        </CardContent>
-      </Card>
+      {renderSignalList({
+        useCorrected: true,
+        title: "신호 리스트 (보정 적용)",
+        description:
+          "현재 시각 기준으로 ageSec를 반영해 남은 시간을 보정한 값입니다.",
+        showRefresh: true,
+      })}
+      {renderSignalList({
+        useCorrected: false,
+        title: "신호 리스트 (보정 미적용)",
+        description:
+          "원본 메시지 수신 시점(secAtMsg) 기준 값입니다. 현장 비교용으로 함께 확인하세요.",
+      })}
     </section>
   );
 }
