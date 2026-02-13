@@ -28,7 +28,21 @@ npm run build:data-index
 
 ```env
 TDATA_API_KEY=your-api-key-here
+TDATA_API_KEY_SUB=your-sub-key-optional
+TDATA_API_KEY_SUB2=your-sub2-key-optional
+
+# Optional: /api/spat 보호
+# 쉼표/공백 구분 IP 허용목록 (설정 시 목록 외 차단)
+SPAT_ALLOWED_IPS=127.0.0.1
+# 로컬 레이트리밋 (IP당, window 기준)
+SPAT_RATE_LIMIT_MAX=120
+SPAT_RATE_LIMIT_WINDOW_SEC=60
 ```
+
+`/api/spat`는 키를 `TDATA_API_KEY -> TDATA_API_KEY_SUB -> TDATA_API_KEY_SUB2` 순서로 자동 시도하며,
+앞선 키가 429(Rate Limit)일 때 다음 키로 자동 폴백합니다.
+
+실제 키 값은 절대 Git에 커밋하지 마세요. `.env.local`은 `.gitignore`에 포함되어 있습니다.
 
 ### 3. 개발 서버 실행
 
@@ -56,6 +70,7 @@ npm start
 - 서비스 URL: https://head-start-seven.vercel.app
 - Vercel에 프로젝트를 연결한 뒤 배포합니다.
 - 필수 환경 변수: `TDATA_API_KEY`
+- 권장 추가 변수: `TDATA_API_KEY_SUB`, `TDATA_API_KEY_SUB2`
 - CLI 배포가 필요하면 아래 명령으로 실행할 수 있습니다.
 
 ```bash
