@@ -28,7 +28,92 @@ const toNumberOrNull = (value: string | null) => {
 const formatQuota = (q: { limit: string | null; remaining: string | null; reset: string | null }) =>
   `limit=${q.limit ?? "-"} remaining=${q.remaining ?? "-"} resetSec=${q.reset ?? "-"}`;
 
-type KeySource = "primary" | "sub";
+type KeySource = "primary" | "sub" | "sub2";
+type LocalRateLimitEntry = { count: number; resetAt: number };
+
+const DEFAULT_LOCAL_RATE_LIMIT_MAX = 120;
+const DEFAULT_LOCAL_RATE_LIMIT_WINDOW_SEC = 60;
+const localRateLimitStore = new Map<string, LocalRateLimitEntry>();
+
+const parsePositiveInt = (raw: string | undefined, fallback: number) => {
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return fallback;
+  const floored = Math.floor(value);
+  if (floored <= 0) return fallback;
+  return floored;
+};
+
+const normalizeIp = (raw: string | null) => {
+  if (!raw) return null;
+  let value = raw.trim();
+  if (!value) return null;
+  if (value.includes(",")) value = value.split(",")[0].trim();
+  if (value.startsWith("::ffff:")) value = value.slice("::ffff:".length);
+  if (value === "::1") value = "127.0.0.1";
+
+  const ipv6WithPort = value.match(/^\[([^\]]+)\](?::\d+)?$/);
+  if (ipv6WithPort) value = ipv6WithPort[1];
+
+  const ipv4WithPort = value.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/);
+  if (ipv4WithPort) value = ipv4WithPort[1];
+
+  return value || null;
+};
+
+const getClientIp = (req: NextApiRequest) => {
+  const forwarded = req.headers["x-forwarded-for"];
+  const forwardedRaw = Array.isArray(forwarded) ? forwarded[0] : forwarded ?? null;
+  const realIpRaw = Array.isArray(req.headers["x-real-ip"])
+    ? req.headers["x-real-ip"][0]
+    : req.headers["x-real-ip"] ?? null;
+  const socketRaw =
+    req.socket?.remoteAddress ??
+    (req.connection as { remoteAddress?: string } | undefined)?.remoteAddress ??
+    null;
+  return normalizeIp(forwardedRaw) || normalizeIp(realIpRaw) || normalizeIp(socketRaw);
+};
+
+const readAllowedIps = () => {
+  const raw = String(process.env.SPAT_ALLOWED_IPS || "").trim();
+  if (!raw) return null;
+  const values = raw
+    .split(/[,\s]+/)
+    .map((token) => normalizeIp(token))
+    .filter((token): token is string => !!token);
+  if (!values.length) return null;
+  return new Set(values);
+};
+
+const consumeLocalRateLimit = (ip: string) => {
+  const limit = parsePositiveInt(
+    process.env.SPAT_RATE_LIMIT_MAX,
+    DEFAULT_LOCAL_RATE_LIMIT_MAX
+  );
+  const windowSec = parsePositiveInt(
+    process.env.SPAT_RATE_LIMIT_WINDOW_SEC,
+    DEFAULT_LOCAL_RATE_LIMIT_WINDOW_SEC
+  );
+  const windowMs = windowSec * 1000;
+  const now = Date.now();
+  let entry = localRateLimitStore.get(ip);
+
+  if (!entry || now >= entry.resetAt) {
+    entry = { count: 0, resetAt: now + windowMs };
+  }
+
+  entry.count += 1;
+  localRateLimitStore.set(ip, entry);
+
+  const remaining = Math.max(0, limit - entry.count);
+  const resetSec = Math.max(0, Math.ceil((entry.resetAt - now) / 1000));
+
+  return {
+    allowed: entry.count <= limit,
+    limit,
+    remaining,
+    resetSec,
+  };
+};
 
 const isRateLimited = (result: FetchJsonResult) => {
   if (result.status === 429) return true;
@@ -44,11 +129,13 @@ const isRateLimited = (result: FetchJsonResult) => {
 const readApiKeys = (): Array<{ source: KeySource; value: string }> => {
   const primary = String(process.env.TDATA_API_KEY || "").trim();
   const sub = String(process.env.TDATA_API_KEY_SUB || "").trim();
+  const sub2 = String(process.env.TDATA_API_KEY_SUB2 || "").trim();
   const out: Array<{ source: KeySource; value: string }> = [];
   const seen = new Set<string>();
   for (const candidate of [
     { source: "primary" as const, value: primary },
     { source: "sub" as const, value: sub },
+    { source: "sub2" as const, value: sub2 },
   ]) {
     if (!candidate.value || seen.has(candidate.value)) continue;
     seen.add(candidate.value);
@@ -66,13 +153,37 @@ export default async function handler(
   }
 
   try {
+    const clientIp = getClientIp(req);
+    const allowedIps = readAllowedIps();
+    if (allowedIps && (!clientIp || !allowedIps.has(clientIp))) {
+      logWarn(`[spat] forbidden ip=${clientIp ?? "unknown"}`);
+      return res.status(403).json({ error: "forbidden client ip" });
+    }
+
+    const rateLimitKey = clientIp ?? "unknown";
+    const localRateLimit = consumeLocalRateLimit(rateLimitKey);
+    res.setHeader("X-RateLimit-Limit", String(localRateLimit.limit));
+    res.setHeader("X-RateLimit-Remaining", String(localRateLimit.remaining));
+    res.setHeader("X-RateLimit-Reset", String(localRateLimit.resetSec));
+    if (!localRateLimit.allowed) {
+      res.setHeader("Retry-After", String(localRateLimit.resetSec));
+      logWarn(
+        `[spat] local-rate-limit ip=${rateLimitKey} limit=${localRateLimit.limit} resetSec=${localRateLimit.resetSec}`
+      );
+      return res.status(429).json({
+        error: "local rate limit exceeded",
+        retryAfterSec: localRateLimit.resetSec,
+      });
+    }
+
     const itstId = String(req.query.itstId || "").trim();
     if (!itstId) return res.status(400).json({ error: "missing itstId" });
 
     const apiKeys = readApiKeys();
     if (!apiKeys.length) {
       return res.status(400).json({
-        error: "missing apiKey (set TDATA_API_KEY and optional TDATA_API_KEY_SUB env)",
+        error:
+          "missing apiKey (set TDATA_API_KEY and optional TDATA_API_KEY_SUB/TDATA_API_KEY_SUB2 env)",
       });
     }
 
