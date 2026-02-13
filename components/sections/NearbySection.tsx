@@ -370,7 +370,7 @@ export function NearbySection({
   };
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-4" data-tour="nearby-section">
       <Card className="border border-border/70">
         <CardHeader>
           <CardTitle className="text-base font-semibold">
@@ -381,7 +381,10 @@ export function NearbySection({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="rounded-md border border-border/60 bg-muted/20 p-3">
+          <div
+            className="rounded-md border border-border/60 bg-muted/20 p-3"
+            data-tour="nearby-location"
+          >
             <div className="mb-3 text-xs font-semibold text-foreground">
               위치 정하기
             </div>
@@ -428,7 +431,10 @@ export function NearbySection({
             </Alert>
           )}
 
-          <div className="rounded-md border border-border/60 bg-muted/20 p-3">
+          <div
+            className="rounded-md border border-border/60 bg-muted/20 p-3"
+            data-tour="nearby-select"
+          >
             <div className="mb-3 flex items-center justify-between gap-2">
               <div className="text-xs font-semibold text-foreground">
                 교차로 선택

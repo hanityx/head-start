@@ -9,6 +9,27 @@ import {
 } from "@/test/testUtils";
 
 const TEST_NEARBY_ITST_ID = "900001";
+const ONBOARDING_COOKIE_KEY = "onboarding_v1";
+
+const clearCookie = (key: string) => {
+  document.cookie = `${key}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+};
+
+const setupMatchMedia = (matches = false) => {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: jest.fn().mockImplementation(() => ({
+      matches,
+      media: "(max-width: 640px)",
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    })),
+  });
+};
 
 describe("Home Page", () => {
   const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -19,12 +40,42 @@ describe("Home Page", () => {
   beforeEach(() => {
     resetFetchMock();
     localStorage.clear();
+    clearCookie(ONBOARDING_COOKIE_KEY);
+    setupMatchMedia(false);
   });
 
   it("should render the main title", () => {
     render(<Home />);
     expect(
       screen.getByText("횡단보도/차량 신호 잔여시간 확인")
+    ).toBeInTheDocument();
+  });
+
+  it("should open interactive guide tour and move to next step", () => {
+    render(<Home />);
+
+    expect(screen.getByTestId("quick-start-hint")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "도움말 다시 보기" }));
+    expect(screen.queryByTestId("quick-start-hint")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "사용 가이드 투어" })).toBeInTheDocument();
+    expect(screen.getByText("교차로 ID를 먼저 확인하세요")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "다음" }));
+    expect(screen.getByText("조회 버튼으로 즉시 확인")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "건너뛰기" }));
+    expect(localStorage.getItem("onboarding:v1")).toBe("done");
+    expect(document.cookie).toContain(`${ONBOARDING_COOKIE_KEY}=done`);
+  });
+
+  it("should use compact mobile copy for the tour on small viewport", () => {
+    setupMatchMedia(true);
+    render(<Home />);
+
+    fireEvent.click(screen.getByRole("button", { name: "도움말 다시 보기" }));
+    expect(screen.getByText("교차로 ID")).toBeInTheDocument();
+    expect(
+      screen.getByText("왼쪽(모바일은 위) 입력창에 ID를 넣거나, 주변 목록 선택으로 자동 입력하세요.")
     ).toBeInTheDocument();
   });
 
@@ -54,7 +105,7 @@ describe("Home Page", () => {
     mockFetchJsonOnce(makeSpatResponse());
 
     render(<Home />);
-    const fetchButton = screen.getByText("조회");
+    const fetchButton = screen.getByRole("button", { name: "조회" });
 
     await act(async () => {
       fireEvent.click(fetchButton);
@@ -72,7 +123,7 @@ describe("Home Page", () => {
     ensureFetchMock().mockRejectedValueOnce(new Error("Network error"));
 
     render(<Home />);
-    const fetchButton = screen.getByText("조회");
+    const fetchButton = screen.getByRole("button", { name: "조회" });
 
     await act(async () => {
       fireEvent.click(fetchButton);
@@ -267,7 +318,7 @@ describe("Home Page", () => {
     mockFetchJsonOnce(makeSpatResponse());
 
     render(<Home />);
-    const fetchButton = screen.getByText("조회");
+    const fetchButton = screen.getByRole("button", { name: "조회" });
 
     await act(async () => {
       fireEvent.click(fetchButton);
