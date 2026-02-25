@@ -47,6 +47,7 @@ const toneMap: Record<SignalTone, string> = {
   gray: "border-muted/60 bg-muted/40 text-muted-foreground",
 };
 
+
 export function SignalCountdownCard({
   title,
   guide,

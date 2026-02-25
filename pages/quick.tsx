@@ -39,10 +39,32 @@ const statusLabel = (status: string | null) => {
   return status;
 };
 
+
 const timeLabel = (sec: number | null) => {
   if (sec === null || sec === undefined || !Number.isFinite(sec)) return "-";
   return `${sec.toFixed(1)}초`;
 };
+
+const remainLabel = (status: string | null, sec: number | null) => {
+  const t = timeLabel(sec);
+  if (t === "-") return "-";
+  if (status === "stop-And-Remain") return `다음 진행까지 ${t}`;
+  if (
+    status === "protected-Movement-Allowed" ||
+    status === "permissive-Movement-Allowed" ||
+    status === "protected-clearance" ||
+    status === "permissive-clearance" ||
+    status === "caution-Conflicting-Traffic"
+  ) {
+    return `현재 진행 종료까지 ${t}`;
+  }
+  return `남은 ${t}`;
+};
+
+const DEV_PHASE_ALLOWLIST_BY_ITST: Record<string, Set<string>> = {
+  "1560": new Set(["etStsgStatNm", "wtStsgStatNm"]),
+};
+const DEV_PHASE_LOCK_ENABLED = process.env.NEXT_PUBLIC_DEV_PHASE_LOCK === "1";
 
 export default function QuickPage() {
   const [itstId, setItstId] = useState(DEFAULT_ITST_ID);
@@ -309,6 +331,14 @@ export default function QuickPage() {
     nearbyItems.find((item) => item.itstId === itstId)?.itstNm ||
     itstNameHint ||
     "";
+  const staleBlocked = Boolean(spatData?.isStale);
+  const filteredItems = (() => {
+    const items = spatData?.items ?? [];
+    if (!DEV_PHASE_LOCK_ENABLED) return items;
+    const allow = DEV_PHASE_ALLOWLIST_BY_ITST[itstId.trim()];
+    if (!allow) return items;
+    return items.filter((it) => !!it.phaseKey && allow.has(String(it.phaseKey)));
+  })();
 
   return (
     <>
@@ -317,7 +347,7 @@ export default function QuickPage() {
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       </Head>
 
-      <main className="mx-auto min-h-dvh w-full max-w-lg space-y-4 px-4 pb-8 pt-5">
+      <main className="mx-auto min-h-dvh w-full max-w-lg space-y-3 px-4 pb-8 pt-4">
         {shouldShowInstallGuide ? (
           <Card className="border border-border/70">
             <CardHeader className="space-y-2">
@@ -353,7 +383,7 @@ export default function QuickPage() {
         <Card className="border border-border/70">
           <CardHeader className="space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-base">빠른 신호 조회</CardTitle>
+              <CardTitle className="text-sm">빠른 신호 조회</CardTitle>
               <Badge variant={isAuto ? "default" : "outline"}>
                 {isAuto ? "자동 갱신 중" : "수동"}
               </Badge>
@@ -452,16 +482,24 @@ export default function QuickPage() {
               </Alert>
             ) : null}
 
-            {spatData?.items?.length ? (
+            {staleBlocked ? (
+              <Alert variant="destructive">
+                <AlertTitle>실시간성 미달</AlertTitle>
+                <AlertDescription>
+                  ageSec가 3초를 초과해 신호 표시를 차단했습니다
+                  {spatData?.ageSec != null ? ` (${spatData.ageSec.toFixed(3)}초)` : ""}.
+                </AlertDescription>
+              </Alert>
+            ) : filteredItems.length ? (
               <div className="space-y-2">
-                {spatData.items.map((item: SpatItem) => (
+                {filteredItems.map((item: SpatItem) => (
                   <div
                     key={item.key ?? item.phaseKey ?? `${item.title}-${item.dirCode}-${item.movCode}`}
                     className="rounded-md border border-border/60 bg-muted/20 p-3"
                   >
-                    <div className="text-sm font-semibold">{item.title}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {statusLabel(item.status)} · 남은 {timeLabel(item.sec)}
+                    <div className="text-[13px] font-semibold">{item.title}</div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      {statusLabel(item.status)} · {remainLabel(item.status, item.sec)}
                     </div>
                   </div>
                 ))}
