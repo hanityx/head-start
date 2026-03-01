@@ -242,10 +242,37 @@ export default async function handler(
       logDebug(`[timing URL][${source}] ${urlTiming.replace(apiKey, "***")}`);
       logDebug(`[phase URL][${source}] ${urlPhase.replace(apiKey, "***")}`);
 
-      const [timingRes, phaseRes] = await Promise.all([
+      const [timingSettled, phaseSettled] = await Promise.allSettled([
         fetchJsonWithTimeout(urlTiming, timeoutMs),
         fetchJsonWithTimeout(urlPhase, timeoutMs),
       ]);
+
+      // 개별 실패 원인 추출
+      const timingFailed = timingSettled.status === "rejected";
+      const phaseFailed = phaseSettled.status === "rejected";
+      const timingErrMsg = timingFailed
+        ? (timingSettled.reason instanceof Error ? timingSettled.reason.message : String(timingSettled.reason))
+        : null;
+      const phaseErrMsg = phaseFailed
+        ? (phaseSettled.reason instanceof Error ? phaseSettled.reason.message : String(phaseSettled.reason))
+        : null;
+
+      if (timingFailed || phaseFailed) {
+        const isTimeout = (timingErrMsg ?? "").includes("abort") || (phaseErrMsg ?? "").includes("abort");
+        const failedEndpoints = [timingFailed ? "timing" : null, phaseFailed ? "phase" : null].filter(Boolean);
+        logError(
+          `[spat] fetch failed itstId=${itstId} keySource=${source} ` +
+          `failed=${failedEndpoints.join("+")} timingErr=${timingErrMsg ?? "-"} phaseErr=${phaseErrMsg ?? "-"}`,
+        );
+        return res.status(504).json({
+          error: isTimeout ? "upstream timeout" : "upstream fetch error",
+          failedEndpoints,
+          detail: { timingErr: timingErrMsg, phaseErr: phaseErrMsg },
+        });
+      }
+
+      const timingRes = (timingSettled as PromiseFulfilledResult<FetchJsonResult>).value;
+      const phaseRes = (phaseSettled as PromiseFulfilledResult<FetchJsonResult>).value;
 
       logInfo(
         `[spat] upstream itstId=${itstId} keySource=${source} timingStatus=${timingRes.status} phaseStatus=${phaseRes.status} ` +
