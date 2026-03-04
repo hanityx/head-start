@@ -1,64 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
-
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { useSpat } from "@/hooks/useSpat";
+import { useLocationBootstrap } from "@/hooks/useLocationBootstrap";
 import { DEFAULT_ITST_ID } from "@/lib/defaults";
 import type { NearbyItem, SpatItem } from "@/lib/types";
 
 const DEFAULT_TIMEOUT_MS = "25000";
 const AUTO_REFRESH_MS = 3000;
 const NEARBY_SUGGEST_COUNT = 5;
-const GEO_OPTIONS: PositionOptions = {
-  enableHighAccuracy: false,
-  timeout: 8000,
-  maximumAge: 60000,
-};
-
 const sanitizeDigits = (raw: string) => raw.replace(/\D/g, "");
 
-type InstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
-};
-
-const isIos = (ua: string) => /iphone|ipad|ipod/i.test(ua);
-const isSafari = (ua: string) =>
-  /safari/i.test(ua) && !/crios|chrome|fxios|edgios|edg/i.test(ua);
-
-const statusLabel = (status: string | null) => {
-  if (!status) return "상태 미확인";
-  if (status === "stop-And-Remain") return "정지";
-  if (status === "protected-Movement-Allowed") return "진행";
-  if (status === "permissive-Movement-Allowed") return "주의 진행";
-  return status;
-};
-
-
-const timeLabel = (sec: number | null) => {
-  if (sec === null || sec === undefined || !Number.isFinite(sec)) return "-";
-  return `${sec.toFixed(1)}초`;
-};
-
-const remainLabel = (status: string | null, sec: number | null) => {
-  const t = timeLabel(sec);
-  if (t === "-") return "-";
-  if (status === "stop-And-Remain") return `다음 진행까지 ${t}`;
-  if (
-    status === "protected-Movement-Allowed" ||
-    status === "permissive-Movement-Allowed" ||
-    status === "protected-clearance" ||
-    status === "permissive-clearance" ||
-    status === "caution-Conflicting-Traffic"
-  ) {
-    return `현재 진행 종료까지 ${t}`;
-  }
-  return `남은 ${t}`;
+const DIR_LETTER: Record<string, string> = {
+  nt: "N", st: "S", et: "E", wt: "W",
+  ne: "NE", nw: "NW", se: "SE", sw: "SW",
 };
 
 const DEV_PHASE_ALLOWLIST_BY_ITST: Record<string, Set<string>> = {
@@ -66,42 +21,103 @@ const DEV_PHASE_ALLOWLIST_BY_ITST: Record<string, Set<string>> = {
 };
 const DEV_PHASE_LOCK_ENABLED = process.env.NEXT_PUBLIC_DEV_PHASE_LOCK === "1";
 
+function SignalCard({ item }: { item: SpatItem }) {
+  const isGo = item.status === "protected-Movement-Allowed";
+  const letter = DIR_LETTER[item.dirCode ?? ""] ?? (item.dirCode?.charAt(0)?.toUpperCase() ?? "?");
+  const sec = item.sec != null ? Math.round(item.sec) : null;
+
+  return (
+    <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100 relative overflow-hidden">
+      <div className="absolute left-0 top-0 h-full w-1.5" style={{ background: isGo ? "#10b981" : "#f43f5e" }} />
+      <div style={{ paddingLeft: 4 }}>
+        <div className="flex justify-between items-center mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center font-black text-slate-400 text-sm select-none">
+              {letter}
+            </div>
+            <h4 className="font-bold text-lg text-slate-900 leading-tight">{item.title}</h4>
+          </div>
+          <span
+            className="material-symbols-outlined text-2xl"
+            style={{ color: isGo ? "#10b981" : "#f43f5e", fontVariationSettings: "'FILL' 1" }}
+          >
+            {isGo ? "check_circle" : "do_not_disturb_on"}
+          </span>
+        </div>
+        <div className="flex items-end justify-between">
+          <div className="flex flex-col">
+            <span className="text-xs text-slate-400 mb-1 font-medium">{isGo ? "남은 시간" : "대기 시간"}</span>
+            <div className="flex items-baseline gap-1">
+              <span className="text-4xl font-black" style={{ color: "#0f172a", opacity: isGo ? 1 : 0.35 }}>
+                {sec !== null ? String(sec).padStart(2, "0") : "--"}
+              </span>
+              <span className="text-sm font-bold text-slate-400">초</span>
+            </div>
+          </div>
+          <div
+            className="px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-1.5"
+            style={{ background: isGo ? "rgba(16,185,129,0.1)" : "rgba(244,63,94,0.1)", color: isGo ? "#059669" : "#f43f5e" }}
+          >
+            <span className="material-symbols-outlined text-lg">{isGo ? "directions_walk" : "front_hand"}</span>
+            {isGo ? "보행 가능" : "보행 정지"}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
+
+function useInstallPrompt() {
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [isIos, setIsIos] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setIsIos(/iphone|ipad|ipod/i.test(navigator.userAgent));
+    setIsStandalone(window.matchMedia("(display-mode: standalone)").matches);
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const triggerInstall = useCallback(async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
+  }, [installPrompt]);
+
+  return { installPrompt, isIos, isStandalone, triggerInstall };
+}
+
 export default function QuickPage() {
   const [itstId, setItstId] = useState(DEFAULT_ITST_ID);
   const [autoFetchOnce, setAutoFetchOnce] = useState(false);
   const [isAuto, setIsAuto] = useState(false);
   const [itstNameHint, setItstNameHint] = useState("");
   const [nearbyItems, setNearbyItems] = useState<NearbyItem[]>([]);
-  const [nearbyError, setNearbyError] = useState("");
-  const [nearbyStatus, setNearbyStatus] = useState("");
-  const [nearbyLoading, setNearbyLoading] = useState(false);
-  const [gpsLoading, setGpsLoading] = useState(false);
-  const [isStandalone, setIsStandalone] = useState(false);
-  const [isIosSafari, setIsIosSafari] = useState(false);
-  const [showInstallGuide, setShowInstallGuide] = useState(false);
-  const [installLoading, setInstallLoading] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<InstallPromptEvent | null>(
-    null
-  );
+  const [showNearby, setShowNearby] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { installPrompt, isIos, isStandalone, triggerInstall } = useInstallPrompt();
 
-  const { spatData, error, isLoading, fetchSpat } = useSpat({
-    itstId,
-    timeoutMs: DEFAULT_TIMEOUT_MS,
-  });
-
-  const resolveNearby = useCallback(async (lat: number, lon: number) => {
-    const res = await fetch(
-      `/api/nearby?lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(
-        String(lon)
-      )}&k=${encodeURIComponent(String(NEARBY_SUGGEST_COUNT))}`
-    );
-    const json = (await res.json()) as { items?: NearbyItem[]; error?: string };
-    if (!res.ok) {
-      throw new Error(json.error ?? "주변 교차로를 찾지 못했습니다.");
-    }
-    return Array.isArray(json.items) ? json.items : [];
-  }, []);
+  const { spatData, error, isLoading, fetchSpat } = useSpat({ itstId, timeoutMs: DEFAULT_TIMEOUT_MS });
+  const {
+    loading: nearbyLoading,
+    gpsLoading,
+    error: nearbyError,
+    status: nearbyStatus,
+    bootstrapByIp,
+    bootstrapByGps,
+  } = useLocationBootstrap(NEARBY_SUGGEST_COUNT);
 
   const applyNearbyItems = useCallback((items: NearbyItem[]) => {
     setNearbyItems(items);
@@ -110,6 +126,7 @@ export default function QuickPage() {
     setItstId(nearest.itstId);
     setItstNameHint(nearest.itstNm ?? "");
     localStorage.setItem("lastItstId", nearest.itstId);
+    setShowNearby(true);
   }, []);
 
   const selectNearby = (item: NearbyItem) => {
@@ -119,80 +136,18 @@ export default function QuickPage() {
     setAutoFetchOnce(true);
   };
 
-  const runIpBasedBootstrap = useCallback(async () => {
-    setNearbyError("");
-    setNearbyStatus("대략 위치로 주변 교차로 찾는 중...");
-    setNearbyLoading(true);
-    try {
-      const ipRes = await fetch("/api/ip-location");
-      const ipJson = (await ipRes.json()) as {
-        lat?: number;
-        lon?: number;
-        label?: string;
-        error?: string;
-      };
-      const lat = Number(ipJson.lat);
-      const lon = Number(ipJson.lon);
-      if (!ipRes.ok || !Number.isFinite(lat) || !Number.isFinite(lon)) {
-        throw new Error(ipJson.error ?? "위치를 확인하지 못했습니다.");
-      }
-
-      const items = await resolveNearby(lat, lon);
-      applyNearbyItems(items);
-      setNearbyStatus(
-        ipJson.label
-          ? `대략 위치(${ipJson.label}) 기준 교차로를 불러왔습니다.`
-          : "대략 위치 기준 교차로를 불러왔습니다."
-      );
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setNearbyError(msg);
-      setNearbyStatus("");
-    } finally {
-      setNearbyLoading(false);
-    }
-  }, [applyNearbyItems, resolveNearby]);
-
   const handleUseCurrentLocation = async () => {
-    if (!navigator?.geolocation) {
-      setNearbyError("현재 위치를 지원하지 않는 브라우저입니다.");
-      return;
-    }
-    const isLocalhost =
-      typeof window !== "undefined" &&
-      ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-    if (typeof window !== "undefined" && !window.isSecureContext && !isLocalhost) {
-      setNearbyError("현재 위치는 HTTPS 환경에서만 사용할 수 있습니다.");
-      return;
-    }
-
-    setNearbyError("");
-    setNearbyStatus("현재 위치 확인 중...");
-    setGpsLoading(true);
-    try {
-      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, GEO_OPTIONS);
-      });
-
-      const items = await resolveNearby(pos.coords.latitude, pos.coords.longitude);
-      applyNearbyItems(items);
-      setNearbyStatus("현재 위치 기준 교차로를 불러왔습니다.");
+    const result = await bootstrapByGps();
+    if (result.items.length > 0) {
+      applyNearbyItems(result.items);
       setAutoFetchOnce(true);
-    } catch (e: unknown) {
-      const geErr = e as GeolocationPositionError;
-      if (geErr?.code === geErr?.PERMISSION_DENIED) {
-        setNearbyError("위치 권한을 허용해 주세요.");
-      } else if (geErr?.code === geErr?.TIMEOUT) {
-        setNearbyError("위치 확인 시간이 초과되었습니다.");
-      } else {
-        const msg = e instanceof Error ? e.message : String(e);
-        setNearbyError(msg || "현재 위치를 확인하지 못했습니다.");
-      }
-      setNearbyStatus("");
-    } finally {
-      setGpsLoading(false);
     }
   };
+
+  const runIpBasedBootstrap = useCallback(async () => {
+    const result = await bootstrapByIp();
+    if (result.items.length > 0) applyNearbyItems(result.items);
+  }, [bootstrapByIp, applyNearbyItems]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -202,135 +157,40 @@ export default function QuickPage() {
       const fromQuery = sanitizeDigits(params.get("itstId") ?? "");
       const fromStorage = sanitizeDigits(localStorage.getItem("lastItstId") ?? "");
       const shouldAuto = params.get("auto") === "1";
-
       const nextId = fromQuery || fromStorage || DEFAULT_ITST_ID;
       setItstId(nextId);
       localStorage.setItem("lastItstId", nextId);
-
-      if (fromQuery || fromStorage) {
-        if (shouldAuto) setAutoFetchOnce(true);
-        return;
-      }
-
+      if (fromQuery || fromStorage) { if (shouldAuto) setAutoFetchOnce(true); return; }
       await runIpBasedBootstrap();
-      if (active && shouldAuto) {
-        setAutoFetchOnce(true);
-      }
+      if (active && shouldAuto) setAutoFetchOnce(true);
     };
-
     void boot();
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, [runIpBasedBootstrap]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const standalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
-    setIsStandalone(standalone);
-
-    const ua = navigator.userAgent.toLowerCase();
-    const iosSafari = isIos(ua) && isSafari(ua);
-    setIsIosSafari(iosSafari);
-    if (!standalone && iosSafari) {
-      setShowInstallGuide(true);
-    }
-
-    const onBeforeInstallPrompt = (event: Event) => {
-      event.preventDefault();
-      setDeferredPrompt(event as InstallPromptEvent);
-      setShowInstallGuide(true);
-    };
-
-    const onInstalled = () => {
-      setDeferredPrompt(null);
-      setShowInstallGuide(false);
-      setIsStandalone(true);
-    };
-
-    const mql = window.matchMedia("(display-mode: standalone)");
-    const onDisplayModeChange = (event: MediaQueryListEvent) => {
-      if (event.matches) {
-        setIsStandalone(true);
-        setShowInstallGuide(false);
-      }
-    };
-
-    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-    window.addEventListener("appinstalled", onInstalled);
-    mql.addEventListener("change", onDisplayModeChange);
-
-    return () => {
-      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-      window.removeEventListener("appinstalled", onInstalled);
-      mql.removeEventListener("change", onDisplayModeChange);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!itstId.trim()) return;
+    if (typeof window === "undefined" || !itstId.trim()) return;
     localStorage.setItem("lastItstId", itstId);
   }, [itstId]);
 
   useEffect(() => {
-    if (!spatData) return;
-    if (spatData.itstId !== itstId) return;
-    if (spatData.itstNm) {
-      setItstNameHint(spatData.itstNm);
-    }
+    if (!spatData || spatData.itstId !== itstId) return;
+    if (spatData.itstNm) setItstNameHint(spatData.itstNm);
   }, [itstId, spatData]);
 
   useEffect(() => {
     if (!autoFetchOnce || !itstId.trim()) return;
-    void fetchSpat();
-    setAutoFetchOnce(false);
+    void fetchSpat(); setAutoFetchOnce(false);
   }, [autoFetchOnce, fetchSpat, itstId]);
 
   useEffect(() => {
-    if (!isAuto) {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      return;
-    }
-
+    if (!isAuto) { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } return; }
     void fetchSpat();
-    timerRef.current = setInterval(() => {
-      void fetchSpat();
-    }, AUTO_REFRESH_MS);
-
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    };
+    timerRef.current = setInterval(() => { void fetchSpat(); }, AUTO_REFRESH_MS);
+    return () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } };
   }, [fetchSpat, isAuto]);
 
-  const handleInstall = async () => {
-    if (!deferredPrompt) return;
-    setInstallLoading(true);
-    try {
-      await deferredPrompt.prompt();
-      await deferredPrompt.userChoice;
-    } finally {
-      setInstallLoading(false);
-      setDeferredPrompt(null);
-    }
-  };
-
-  const canPromptInstall = Boolean(deferredPrompt);
-  const shouldShowInstallGuide = !isStandalone && showInstallGuide;
-  const activeName =
-    (spatData?.itstId === itstId ? spatData.itstNm : null) ||
-    nearbyItems.find((item) => item.itstId === itstId)?.itstNm ||
-    itstNameHint ||
-    "";
+  const activeName = (spatData?.itstId === itstId ? spatData.itstNm : null) || nearbyItems.find((it) => it.itstId === itstId)?.itstNm || itstNameHint || "";
   const staleBlocked = Boolean(spatData?.isStale);
   const filteredItems = (() => {
     const items = spatData?.items ?? [];
@@ -339,175 +199,196 @@ export default function QuickPage() {
     if (!allow) return items;
     return items.filter((it) => !!it.phaseKey && allow.has(String(it.phaseKey)));
   })();
+  const goCount = filteredItems.filter((it) => it.status === "protected-Movement-Allowed").length;
 
   return (
     <>
       <Head>
-        <title>빠른 신호 조회</title>
+        <title>{activeName ? `${activeName} · 신호` : "신호 조회"}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       </Head>
 
-      <main className="mx-auto min-h-dvh w-full max-w-lg space-y-3 px-4 pb-8 pt-4">
-        {shouldShowInstallGuide ? (
-          <Card className="border border-border/70">
-            <CardHeader className="space-y-2">
-              <CardTitle className="text-sm">앱처럼 빠르게 사용</CardTitle>
-              <div className="text-xs text-muted-foreground">
-                {canPromptInstall
-                  ? "설치 후 홈 화면 아이콘으로 바로 실행할 수 있습니다."
-                  : "처음 한 번만 설치하면 다음부터 1탭으로 열립니다."}
-              </div>
-              {isIosSafari ? (
-                <div className="text-xs text-muted-foreground">
-                  iPhone/iPad: Safari 공유 버튼 → 홈 화면에 추가
-                </div>
-              ) : null}
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
-              {canPromptInstall ? (
-                <Button size="sm" onClick={() => void handleInstall()} disabled={installLoading}>
-                  {installLoading ? "설치 준비 중..." : "앱 설치"}
-                </Button>
-              ) : null}
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setShowInstallGuide(false)}
-              >
-                안내 닫기
-              </Button>
-            </CardContent>
-          </Card>
-        ) : null}
+      <div className="min-h-dvh flex flex-col" style={{ background: "#f3f4f6", maxWidth: 480, margin: "0 auto" }}>
 
-        <Card className="border border-border/70">
-          <CardHeader className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-sm">빠른 신호 조회</CardTitle>
-              <Badge variant={isAuto ? "default" : "outline"}>
-                {isAuto ? "자동 갱신 중" : "수동"}
-              </Badge>
+        {/* 헤더 */}
+        <header className="bg-white border-b border-slate-100 px-6 pt-10 pb-4 sticky top-0 z-20">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">현재 교차로</span>
+              <h1 className="text-xl font-black text-slate-900 leading-tight mt-0.5">{activeName || "교차로 선택"}</h1>
             </div>
-            <div className="space-y-2">
-              <label className="text-xs text-muted-foreground">
-                <div className="flex items-center justify-between gap-2">
-                  <span>교차로 ID</span>
-                  {activeName ? (
-                    <span className="truncate text-[11px] text-foreground">{activeName}</span>
-                  ) : null}
-                </div>
-                <Input
-                  className="mt-2"
-                  value={itstId}
-                  onChange={(e) => {
-                    setItstId(sanitizeDigits(e.target.value));
-                    setItstNameHint("");
-                  }}
-                  placeholder={`예: ${DEFAULT_ITST_ID}`}
-                />
-              </label>
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={() => void fetchSpat()} disabled={isLoading}>
-                  {isLoading ? "조회 중..." : "조회"}
-                </Button>
-                <Button variant="outline" onClick={() => setIsAuto((prev) => !prev)}>
-                  {isAuto ? "자동 끄기" : "자동 켜기"}
-                </Button>
-                <Button variant="ghost" asChild>
-                  <Link href="/">전체 화면</Link>
-                </Button>
+            <button
+              onClick={() => setIsAuto((v) => !v)}
+              className="w-9 h-9 rounded-full flex items-center justify-center"
+              style={{ background: isAuto ? "rgba(16,185,129,0.1)" : "rgba(0,0,0,0.04)", color: isAuto ? "#059669" : "#94a3b8" }}
+            >
+              <span className="material-symbols-outlined text-xl">{isAuto ? "pause_circle" : "play_circle"}</span>
+            </button>
+          </div>
+          <div className="relative">
+            <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xl pointer-events-none">tag</span>
+            <input
+              value={itstId}
+              onChange={(e) => { setItstId(sanitizeDigits(e.target.value)); setItstNameHint(""); }}
+              onKeyDown={(e) => { if (e.key === "Enter") void fetchSpat(); }}
+              placeholder="교차로 ID 입력..."
+              className="w-full pl-11 pr-20 py-3 bg-gray-50 border border-slate-200 rounded-2xl text-sm font-medium outline-none"
+            />
+            <button
+              onClick={() => void fetchSpat()}
+              disabled={isLoading}
+              className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-xl text-xs font-bold"
+              style={{ background: "#ec5b13", color: "#fff", opacity: isLoading ? 0.6 : 1 }}
+            >
+              {isLoading ? "조회 중" : "조회"}
+            </button>
+          </div>
+        </header>
+
+        {/* PWA 설치 배너 */}
+        {!isStandalone && installPrompt && (
+          <div className="px-6 py-3 bg-orange-50 border-b border-orange-100 flex items-center justify-between">
+            <span className="text-sm text-orange-700 font-medium">홈 화면에 추가하면 더 빠르게 열 수 있어요</span>
+            <button
+              onClick={() => void triggerInstall()}
+              className="ml-3 px-3 py-1.5 rounded-xl text-xs font-bold text-white"
+              style={{ background: "#ec5b13" }}
+            >
+              앱 설치
+            </button>
+          </div>
+        )}
+        {!isStandalone && isIos && !installPrompt && (
+          <div className="px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs text-slate-500 text-center">
+            iPhone/iPad: Safari 공유 버튼 → 홈 화면에 추가
+          </div>
+        )}
+
+        {/* 메인 */}
+        <main className="flex-1 overflow-y-auto px-6 pt-4 pb-28 space-y-4">
+
+          {/* LIVE STATUS */}
+          <div className="rounded-3xl p-5 text-white relative overflow-hidden" style={{ background: "linear-gradient(135deg,#1e293b,#0f172a)" }}>
+            <div className="absolute right-0 top-0 w-32 h-32 rounded-full blur-2xl -mr-10 -mt-10" style={{ background: "rgba(255,255,255,0.05)" }} />
+            <div className="relative z-10">
+              <div className="flex justify-between items-start mb-2">
+                <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-widest uppercase" style={{ background: "rgba(255,255,255,0.15)" }}>Live Status</span>
+                {staleBlocked ? (
+                  <span className="text-xs font-semibold text-yellow-400">데이터 지연</span>
+                ) : spatData ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                    </span>
+                    <span className="text-xs font-semibold text-emerald-400">실시간 수신 중</span>
+                  </div>
+                ) : null}
               </div>
-              <div className="rounded-md border border-border/60 bg-muted/20 p-3">
-                <div className="mb-2 text-xs font-semibold text-foreground">
-                  위치 기반으로 교차로 선택
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void handleUseCurrentLocation()}
-                    disabled={gpsLoading || nearbyLoading}
-                  >
-                    {gpsLoading ? "위치 확인 중..." : "현재 위치 사용"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => void runIpBasedBootstrap()}
-                    disabled={nearbyLoading}
-                  >
-                    {nearbyLoading ? "불러오는 중..." : "대략 위치로 찾기"}
-                  </Button>
-                </div>
-                {nearbyStatus ? (
-                  <div className="mt-2 text-[11px] text-muted-foreground">{nearbyStatus}</div>
-                ) : null}
-                {nearbyError ? (
-                  <div className="mt-2 text-[11px] text-destructive">{nearbyError}</div>
-                ) : null}
-                {nearbyItems.length ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
+              <h2 className="text-lg font-bold mb-1">안전 보행 가이드</h2>
+              <p className="text-sm" style={{ color: "rgba(255,255,255,0.7)" }}>
+                {filteredItems.length ? <><span style={{ color: "#34d399", fontWeight: 700 }}>{goCount}개 방향</span> 보행 가능</> : isLoading ? "신호 조회 중..." : "조회 버튼을 눌러주세요"}
+              </p>
+            </div>
+          </div>
+
+          {error && <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 text-sm text-red-600 font-medium">{error}</div>}
+          {staleBlocked && <div className="bg-yellow-50 border border-yellow-200 rounded-2xl px-4 py-3 text-sm text-yellow-700 font-medium">실시간성 미달 — ageSec {spatData?.ageSec?.toFixed(1)}s 초과</div>}
+
+          {/* 신호 카드 */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">방향별 신호</h3>
+              {spatData?.fetchedAtKst && <span className="text-[10px] text-slate-400">{spatData.fetchedAtKst.slice(11, 19)}</span>}
+            </div>
+            {isLoading && !filteredItems.length && (
+              [1, 2, 3].map((i) => (
+                <div key={i} className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100 animate-pulse" style={{ height: 128 }} />
+              ))
+            )}
+            {!staleBlocked && filteredItems.map((item: SpatItem) => (
+              <SignalCard key={item.key ?? item.phaseKey ?? item.title} item={item} />
+            ))}
+            {!filteredItems.length && !isLoading && !error && (
+              <div className="bg-white rounded-3xl p-8 text-center shadow-sm border border-slate-100">
+                <span className="material-symbols-outlined text-4xl text-slate-200">traffic</span>
+                <p className="text-slate-400 mt-3 text-sm font-medium">교차로 ID를 입력 후 조회하세요</p>
+              </div>
+            )}
+          </div>
+
+          {/* 주변 교차로 */}
+          <div>
+            {/* 위치 버튼 — 항상 노출 */}
+            <div className="flex gap-2 mb-2">
+              <button onClick={() => void handleUseCurrentLocation()} disabled={gpsLoading || nearbyLoading}
+                className="flex-1 py-2.5 bg-white rounded-2xl border border-slate-200 text-sm font-semibold text-slate-700 flex items-center justify-center gap-1.5 disabled:opacity-50">
+                <span className="material-symbols-outlined text-base" style={{ color: "#ec5b13" }}>my_location</span>
+                {gpsLoading ? "확인 중..." : "현재 위치"}
+              </button>
+              <button onClick={() => void runIpBasedBootstrap()} disabled={nearbyLoading || gpsLoading}
+                className="flex-1 py-2.5 bg-white rounded-2xl border border-slate-200 text-sm font-semibold text-slate-700 flex items-center justify-center gap-1.5 disabled:opacity-50">
+                <span className="material-symbols-outlined text-base" style={{ color: "#ec5b13" }}>location_searching</span>
+                {nearbyLoading ? "찾는 중..." : "대략 위치"}
+              </button>
+            </div>
+            {nearbyStatus && <p className="text-xs text-slate-500 px-1 mb-1">{nearbyStatus}</p>}
+            {nearbyError && <p className="text-xs text-red-500 px-1 mb-1">{nearbyError}</p>}
+
+            {/* 주변 목록 — 접기/펼치기 */}
+            {nearbyItems.length > 0 && (
+              <>
+                <button onClick={() => setShowNearby((v) => !v)} className="w-full flex items-center justify-between px-1 py-2">
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">주변 교차로</h3>
+                  <span className="material-symbols-outlined text-slate-400 text-sm">{showNearby ? "expand_less" : "expand_more"}</span>
+                </button>
+                {showNearby && (
+                  <div className="space-y-2 mt-1">
                     {nearbyItems.map((item) => (
-                      <Button
-                        key={item.itstId}
-                        size="sm"
-                        variant={item.itstId === itstId ? "default" : "outline"}
-                        onClick={() => selectNearby(item)}
-                        className="h-auto py-1.5"
-                      >
-                        {item.itstNm}
-                      </Button>
+                      <button key={item.itstId} onClick={() => selectNearby(item)}
+                        className="w-full flex items-center justify-between p-4 rounded-2xl border text-left"
+                        style={{ background: item.itstId === itstId ? "#fff7ed" : "#fff", borderColor: item.itstId === itstId ? "#fed7aa" : "#f1f5f9" }}>
+                        <div>
+                          <div className="font-bold text-sm" style={{ color: item.itstId === itstId ? "#c2410c" : "#0f172a" }}>{item.itstNm}</div>
+                          <div className="text-xs text-slate-400 mt-0.5">ID {item.itstId}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-bold text-slate-600">
+                            {item.distanceM >= 1000 ? `${(item.distanceM / 1000).toFixed(1)}km` : `${Math.round(item.distanceM)}m`}
+                          </div>
+                          <div className="text-[10px] text-slate-400">직선 거리</div>
+                        </div>
+                      </button>
                     ))}
                   </div>
-                ) : null}
+                )}
+              </>
+            )}
+          </div>
+        </main>
+
+        {/* 하단 내비 */}
+        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-6 py-2 z-30"
+          style={{ maxWidth: 480, margin: "0 auto", boxShadow: "0 -4px 20px rgba(0,0,0,0.05)", paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
+          <div className="flex justify-between items-center">
+            <Link href="/" className="flex flex-col items-center gap-1 p-2 flex-1 text-slate-400 hover:text-orange-500 transition-colors">
+              <span className="material-symbols-outlined text-2xl">home</span>
+              <span className="text-[10px] font-bold">홈</span>
+            </Link>
+            <div className="flex flex-col items-center gap-1 p-2 flex-1" style={{ color: "#ec5b13" }}>
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center -mt-8 mb-1"
+                style={{ background: "#ec5b13", boxShadow: "0 8px 20px rgba(236,91,19,0.35)" }}>
+                <span className="material-symbols-outlined text-white text-2xl">traffic</span>
               </div>
+              <span className="text-[10px] font-bold">신호</span>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {spatData ? (
-              <div className="text-xs text-muted-foreground">
-                <div>
-                  교차로: <b>{spatData.itstNm ?? "-"}</b>
-                </div>
-                <div>
-                  조회 시간: <b>{spatData.fetchedAtKst ?? "-"}</b>
-                </div>
-              </div>
-            ) : null}
-
-            {error ? (
-              <Alert variant="destructive">
-                <AlertTitle>조회 실패</AlertTitle>
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            ) : null}
-
-            {staleBlocked ? (
-              <Alert variant="destructive">
-                <AlertTitle>실시간성 미달</AlertTitle>
-                <AlertDescription>
-                  ageSec가 3초를 초과해 신호 표시를 차단했습니다
-                  {spatData?.ageSec != null ? ` (${spatData.ageSec.toFixed(3)}초)` : ""}.
-                </AlertDescription>
-              </Alert>
-            ) : filteredItems.length ? (
-              <div className="space-y-2">
-                {filteredItems.map((item: SpatItem) => (
-                  <div
-                    key={item.key ?? item.phaseKey ?? `${item.title}-${item.dirCode}-${item.movCode}`}
-                    className="rounded-md border border-border/60 bg-muted/20 p-3"
-                  >
-                    <div className="text-[13px] font-semibold">{item.title}</div>
-                    <div className="mt-1 text-[11px] text-muted-foreground">
-                      {statusLabel(item.status)} · {remainLabel(item.status, item.sec)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-      </main>
+            <Link href={`/view?itstId=${itstId}&auto=1`} className="flex flex-col items-center gap-1 p-2 flex-1 text-slate-400 hover:text-orange-500 transition-colors">
+              <span className="material-symbols-outlined text-2xl">map</span>
+              <span className="text-[10px] font-bold">지도</span>
+            </Link>
+          </div>
+        </nav>
+      </div>
     </>
   );
 }
