@@ -59,6 +59,7 @@ describe("Quick Page", () => {
     mockedUseSpat.mockReturnValue({
       spatData: null,
       error: "",
+      errorDetail: null,
       isLoading: false,
       fetchSpat,
       setError: jest.fn(),

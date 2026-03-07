@@ -1,38 +1,45 @@
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import Home from "@/pages/index";
-import { makeSpatResponse } from "@/test/fixtures";
-import { DEFAULT_ITST_ID } from "@/lib/defaults";
 import {
   ensureFetchMock,
   mockFetchJsonOnce,
   resetFetchMock,
 } from "@/test/testUtils";
 
-const TEST_NEARBY_ITST_ID = "900001";
-const ONBOARDING_COOKIE_KEY = "onboarding_v1";
+jest.mock("next/router", () => ({
+  useRouter: () => ({
+    push: jest.fn(),
+    replace: jest.fn(),
+    prefetch: jest.fn(),
+    query: {},
+    pathname: "/",
+    asPath: "/",
+  }),
+}));
 
-const clearCookie = (key: string) => {
-  document.cookie = `${key}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-};
+const mockPush = jest.fn();
+jest.mock("next/router", () => ({
+  useRouter: () => ({
+    push: mockPush,
+    replace: jest.fn(),
+    prefetch: jest.fn(),
+    query: {},
+    pathname: "/",
+    asPath: "/",
+  }),
+}));
 
-const setupMatchMedia = (matches = false) => {
-  Object.defineProperty(window, "matchMedia", {
-    configurable: true,
-    value: jest.fn().mockImplementation(() => ({
-      matches,
-      media: "(max-width: 640px)",
-      onchange: null,
-      addListener: jest.fn(),
-      removeListener: jest.fn(),
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn(),
-      dispatchEvent: jest.fn(),
-    })),
-  });
+const nearbyItem = {
+  itstId: "1560",
+  itstNm: "면목아이파크102동",
+  lat: 37.58,
+  lon: 127.08,
+  distanceM: 120,
 };
 
 describe("Home Page", () => {
   const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
+
   beforeAll(() => {
     ensureFetchMock();
   });
@@ -40,294 +47,136 @@ describe("Home Page", () => {
   beforeEach(() => {
     resetFetchMock();
     localStorage.clear();
-    clearCookie(ONBOARDING_COOKIE_KEY);
-    setupMatchMedia(false);
+    mockPush.mockClear();
+    // ip-location + nearby fallback 기본 응답
+    mockFetchJsonOnce({ lat: 37.57, lon: 127.04, label: "서울시" });
+    mockFetchJsonOnce({ items: [nearbyItem] });
   });
 
-  it("should render the main title", () => {
+  it("should render the main title", async () => {
     render(<Home />);
-    expect(
-      screen.getByText("횡단보도/차량 신호 잔여시간 확인")
-    ).toBeInTheDocument();
+    expect(screen.getByText("지능형 보행 신호 안내")).toBeInTheDocument();
   });
 
-  it("should open interactive guide tour and move to next step", () => {
+  it("should show sort buttons", async () => {
     render(<Home />);
-
-    expect(screen.getByTestId("quick-start-hint")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "도움말 다시 보기" }));
-    expect(screen.queryByTestId("quick-start-hint")).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "사용 가이드 투어" })).toBeInTheDocument();
-    expect(screen.getByText("교차로 ID를 먼저 확인하세요")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    expect(screen.getByText("조회 버튼으로 즉시 확인")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "건너뛰기" }));
-    expect(localStorage.getItem("onboarding:v1")).toBe("done");
-    expect(document.cookie).toContain(`${ONBOARDING_COOKIE_KEY}=done`);
+    expect(screen.getByRole("button", { name: "가까운 순" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "이름 순" })).toBeInTheDocument();
   });
 
-  it("should use compact mobile copy for the tour on small viewport", () => {
-    setupMatchMedia(true);
+  it("should load nearby intersections via ip-location on mount", async () => {
     render(<Home />);
-
-    fireEvent.click(screen.getByRole("button", { name: "도움말 다시 보기" }));
-    expect(screen.getByText("교차로 ID")).toBeInTheDocument();
-    expect(
-      screen.getByText("왼쪽(모바일은 위) 입력창에 ID를 넣거나, 주변 목록 선택으로 자동 입력하세요.")
-    ).toBeInTheDocument();
+    expect(await screen.findByText("면목아이파크102동")).toBeInTheDocument();
+    expect(global.fetch).toHaveBeenCalledWith("/api/ip-location");
   });
 
-  it("should have default values for inputs", () => {
+  it("should show intersection ID and distance in list", async () => {
     render(<Home />);
-    const itstIdInput = screen.getByDisplayValue(DEFAULT_ITST_ID);
-    const timeoutInput = screen.getByDisplayValue("25");
-    const intervalInput = screen.getByDisplayValue("3");
-
-    expect(itstIdInput).toBeInTheDocument();
-    expect(timeoutInput).toBeInTheDocument();
-    expect(intervalInput).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(`예: ${DEFAULT_ITST_ID}`)).toBeInTheDocument();
+    await screen.findByText("면목아이파크102동");
+    expect(screen.getByText(/ID 1560/)).toBeInTheDocument();
+    expect(screen.getByText("120m")).toBeInTheDocument();
   });
 
-  it("should update input values on change", () => {
+  it("should navigate to view page when intersection is clicked", async () => {
     render(<Home />);
-    const itstIdInput = screen.getByDisplayValue(
-      DEFAULT_ITST_ID
-    ) as HTMLInputElement;
-
-    fireEvent.change(itstIdInput, { target: { value: "1234" } });
-    expect(itstIdInput.value).toBe("1234");
+    const item = await screen.findByText("면목아이파크102동");
+    fireEvent.click(item);
+    expect(mockPush).toHaveBeenCalledWith("/view?itstId=1560&auto=1");
+    expect(localStorage.getItem("lastItstId")).toBe("1560");
   });
 
-  it("should call API when 조회 button is clicked", async () => {
-    mockFetchJsonOnce(makeSpatResponse());
+  it("should search intersections by name with debounce", async () => {
+    mockFetchJsonOnce({ items: [{ itstId: "9999", itstNm: "테스트사거리", lat: 37.5, lon: 127.0, distanceM: 500 }] });
 
     render(<Home />);
-    const fetchButton = screen.getByRole("button", { name: "조회" });
+    await screen.findByText("면목아이파크102동");
 
+    const searchInput = screen.getByPlaceholderText("교차로 이름 또는 ID로 검색...");
     await act(async () => {
-      fireEvent.click(fetchButton);
-      await flushPromises();
-    });
-
-    await waitFor(() => {
-        expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining(`/api/spat?itstId=${DEFAULT_ITST_ID}`)
-      );
-    });
-  });
-
-  it("should display error message on API failure", async () => {
-    ensureFetchMock().mockRejectedValueOnce(new Error("Network error"));
-
-    render(<Home />);
-    const fetchButton = screen.getByRole("button", { name: "조회" });
-
-    await act(async () => {
-      fireEvent.click(fetchButton);
-      await flushPromises();
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText(/Network error/i)).toBeInTheDocument();
-    });
-  });
-
-  it("should render nearby search inputs", () => {
-    render(<Home />);
-    expect(screen.getByLabelText("주소/역 이름으로 찾기")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "주소 검색" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "현재 위치" })).toBeInTheDocument();
-    expect(screen.queryByText("위도")).not.toBeInTheDocument();
-    expect(screen.queryByText("경도")).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "가까운 교차로 찾기" })
-    ).not.toBeInTheDocument();
-  });
-
-  it("should toggle auto refresh", () => {
-    render(<Home />);
-    const autoButton = screen.getByText("자동 갱신 켜기");
-
-    fireEvent.click(autoButton);
-    expect(screen.getByText("자동 갱신 끄기")).toBeInTheDocument();
-
-    fireEvent.click(autoButton);
-    expect(screen.getByText("자동 갱신 켜기")).toBeInTheDocument();
-  });
-
-  it("should search nearby intersections with geocoded coordinates", async () => {
-    mockFetchJsonOnce({
-      lat: "37.5701",
-      lon: "126.9768",
-      displayName: "테스트 위치",
-    });
-    mockFetchJsonOnce({ items: [] });
-
-    render(<Home />);
-    const addressInput = screen.getByLabelText("주소/역 이름으로 찾기");
-    fireEvent.change(addressInput, { target: { value: "테스트 주소" } });
-
-    const addressButton = screen.getByRole("button", { name: "주소 검색" });
-    await act(async () => {
-      fireEvent.click(addressButton);
+      fireEvent.change(searchInput, { target: { value: "테스트" } });
+      await new Promise((r) => setTimeout(r, 300));
       await flushPromises();
     });
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/geocode?q=")
-      );
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/nearby?lat=37.5701&lon=126.9768&k=5")
+        expect.stringContaining("/api/search-intersections?q=")
       );
     });
   });
 
-  it("should search nearby intersections with current geolocation", async () => {
-    mockFetchJsonOnce({ items: [] });
+  it("should fetch nearby intersections with GPS", async () => {
+    // GPS fetch 응답 추가
+    mockFetchJsonOnce({ items: [{ itstId: "2230", itstNm: "방학사거리", lat: 37.65, lon: 127.02, distanceM: 50 }] });
 
     const getCurrentPosition = jest.fn(
-      (success: (position: { coords: { latitude: number; longitude: number } }) => void) =>
-        success({ coords: { latitude: 37.5665, longitude: 126.978 } })
+      (success: (pos: { coords: { latitude: number; longitude: number } }) => void) =>
+        success({ coords: { latitude: 37.6548, longitude: 127.0224 } })
     );
-
     Object.defineProperty(global.navigator, "geolocation", {
       configurable: true,
       value: { getCurrentPosition },
     });
 
     render(<Home />);
+    await screen.findByText("면목아이파크102동");
 
-    const currentLocationButton = screen.getByRole("button", { name: "현재 위치" });
+    const gpsButton = screen.getByRole("button", { name: /현재 위치/ });
     await act(async () => {
-      fireEvent.click(currentLocationButton);
+      fireEvent.click(gpsButton);
       await flushPromises();
     });
 
     await waitFor(() => {
       expect(getCurrentPosition).toHaveBeenCalled();
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/nearby?lat=37.5665&lon=126.978&k=5")
+        expect.stringContaining("/api/nearby?lat=37.6548&lon=127.0224")
       );
     });
   });
 
-  it("should set id and fetch spat when selecting nearby intersection", async () => {
-    mockFetchJsonOnce({
-      items: [
-        {
-          itstId: TEST_NEARBY_ITST_ID,
-          itstNm: "테스트교차로A",
-          lat: 37.5,
-          lon: 127.0,
-          distanceM: 120.5,
-        },
-      ],
-    });
-    mockFetchJsonOnce(makeSpatResponse({ itstId: TEST_NEARBY_ITST_ID }));
+  it("should toggle sort between distance and name", async () => {
+    render(<Home />);
+    await screen.findByText("면목아이파크102동");
 
-    const getCurrentPosition = jest.fn(
-      (
-        success: (position: { coords: { latitude: number; longitude: number } }) => void
-      ) => success({ coords: { latitude: 37.5665, longitude: 126.978 } })
-    );
+    const nameSort = screen.getByRole("button", { name: "이름 순" });
+    fireEvent.click(nameSort);
 
-    Object.defineProperty(global.navigator, "geolocation", {
-      configurable: true,
-      value: { getCurrentPosition },
-    });
+    const distSort = screen.getByRole("button", { name: "가까운 순" });
+    fireEvent.click(distSort);
+
+    expect(screen.getByRole("button", { name: "가까운 순" })).toBeInTheDocument();
+  });
+
+  it("should show error message when ip-location fails", async () => {
+    resetFetchMock();
+    ensureFetchMock()
+      .mockRejectedValueOnce(new Error("network error"))
+      .mockRejectedValueOnce(new Error("network error")); // Seoul fallback
 
     render(<Home />);
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "현재 위치" }));
-      await flushPromises();
-    });
-
-    const selectButton = await screen.findByRole("button", { name: "이 ID로 조회" });
-    await act(async () => {
-      fireEvent.click(selectButton);
-      await flushPromises();
-    });
-
     await waitFor(() => {
-      expect(screen.getByDisplayValue(TEST_NEARBY_ITST_ID)).toBeInTheDocument();
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining(`/api/spat?itstId=${TEST_NEARBY_ITST_ID}`)
-      );
+      expect(screen.getByText(/network error/i)).toBeInTheDocument();
     });
   });
 
-  it("should show and hide map preview when 지도보기 is clicked", async () => {
-    mockFetchJsonOnce({
-      items: [
-        {
-          itstId: TEST_NEARBY_ITST_ID,
-          itstNm: "테스트교차로A",
-          lat: 37.5,
-          lon: 127.0,
-          distanceM: 120.5,
-        },
-      ],
-    });
-
-    const getCurrentPosition = jest.fn(
-      (
-        success: (position: { coords: { latitude: number; longitude: number } }) => void
-      ) => success({ coords: { latitude: 37.5665, longitude: 126.978 } })
-    );
-
-    Object.defineProperty(global.navigator, "geolocation", {
-      configurable: true,
-      value: { getCurrentPosition },
-    });
+  it("should show empty state when search returns no results", async () => {
+    // search empty
+    mockFetchJsonOnce({ items: [] });
 
     render(<Home />);
+    await screen.findByText("면목아이파크102동");
 
+    const searchInput = screen.getByPlaceholderText("교차로 이름 또는 ID로 검색...");
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "현재 위치" }));
-      await flushPromises();
-    });
-
-    const mapButton = await screen.findByRole("button", { name: "지도보기" });
-    await act(async () => {
-      fireEvent.click(mapButton);
-      await flushPromises();
-    });
-
-    expect(
-      screen.getByTitle(`교차로 위치 지도-nearby-${TEST_NEARBY_ITST_ID}`)
-    ).toBeInTheDocument();
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "지도 닫기" }));
+      fireEvent.change(searchInput, { target: { value: "없는교차로abc" } });
+      await new Promise((r) => setTimeout(r, 300));
       await flushPromises();
     });
 
     await waitFor(() => {
-      expect(
-        screen.queryByTitle(`교차로 위치 지도-nearby-${TEST_NEARBY_ITST_ID}`)
-      ).not.toBeInTheDocument();
-    });
-  });
-
-  it("should display spat data when available", async () => {
-    mockFetchJsonOnce(makeSpatResponse());
-
-    render(<Home />);
-    const fetchButton = screen.getByRole("button", { name: "조회" });
-
-    await act(async () => {
-      fireEvent.click(fetchButton);
-      await flushPromises();
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText("테스트교차로")).toBeInTheDocument();
-      expect(screen.getByText("북측 보행")).toBeInTheDocument();
+      expect(screen.getByText("검색 결과가 없습니다.")).toBeInTheDocument();
     });
   });
 });
