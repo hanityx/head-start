@@ -133,6 +133,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
     const msg = e instanceof Error ? e.message : String(e);
     logError(`[ip-location] error=${msg}`);
-    return res.status(500).json({ error: msg });
+    return res.status(500).json({ error: "internal server error" });
   }
 }

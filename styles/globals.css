@@ -67,17 +67,7 @@ body {
     sans-serif;
   -webkit-text-size-adjust: 100%;
   margin: 0;
-  background: radial-gradient(
-      1200px 500px at 20% -20%,
-      rgba(56, 189, 248, 0.16),
-      transparent 60%
-    ),
-    radial-gradient(
-      1000px 500px at 90% 0%,
-      rgba(99, 102, 241, 0.14),
-      transparent 55%
-    ),
-    var(--background);
+  background: var(--background);
   color: var(--foreground);
   min-height: 100vh;
 }

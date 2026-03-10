@@ -25,7 +25,11 @@ const toNumberOrNull = (value: string | null) => {
   return Number.isFinite(n) ? n : null;
 };
 
-const formatQuota = (q: { limit: string | null; remaining: string | null; reset: string | null }) =>
+const formatQuota = (q: {
+  limit: string | null;
+  remaining: string | null;
+  reset: string | null;
+}) =>
   `limit=${q.limit ?? "-"} remaining=${q.remaining ?? "-"} resetSec=${q.reset ?? "-"}`;
 
 type KeySource = "primary" | "sub" | "sub2";
@@ -62,15 +66,21 @@ const normalizeIp = (raw: string | null) => {
 
 const getClientIp = (req: NextApiRequest) => {
   const forwarded = req.headers["x-forwarded-for"];
-  const forwardedRaw = Array.isArray(forwarded) ? forwarded[0] : forwarded ?? null;
+  const forwardedRaw = Array.isArray(forwarded)
+    ? forwarded[0]
+    : (forwarded ?? null);
   const realIpRaw = Array.isArray(req.headers["x-real-ip"])
     ? req.headers["x-real-ip"][0]
-    : req.headers["x-real-ip"] ?? null;
+    : (req.headers["x-real-ip"] ?? null);
   const socketRaw =
     req.socket?.remoteAddress ??
     (req.connection as { remoteAddress?: string } | undefined)?.remoteAddress ??
     null;
-  return normalizeIp(forwardedRaw) || normalizeIp(realIpRaw) || normalizeIp(socketRaw);
+  return (
+    normalizeIp(forwardedRaw) ||
+    normalizeIp(realIpRaw) ||
+    normalizeIp(socketRaw)
+  );
 };
 
 const readAllowedIps = () => {
@@ -87,14 +97,21 @@ const readAllowedIps = () => {
 const consumeLocalRateLimit = (ip: string) => {
   const limit = parsePositiveInt(
     process.env.SPAT_RATE_LIMIT_MAX,
-    DEFAULT_LOCAL_RATE_LIMIT_MAX
+    DEFAULT_LOCAL_RATE_LIMIT_MAX,
   );
   const windowSec = parsePositiveInt(
     process.env.SPAT_RATE_LIMIT_WINDOW_SEC,
-    DEFAULT_LOCAL_RATE_LIMIT_WINDOW_SEC
+    DEFAULT_LOCAL_RATE_LIMIT_WINDOW_SEC,
   );
   const windowMs = windowSec * 1000;
   const now = Date.now();
+
+  if (localRateLimitStore.size > 10000) {
+    for (const [key, val] of localRateLimitStore.entries()) {
+      if (now >= val.resetAt) localRateLimitStore.delete(key);
+    }
+  }
+
   let entry = localRateLimitStore.get(ip);
 
   if (!entry || now >= entry.resetAt) {
@@ -120,10 +137,16 @@ const isRateLimited = (result: FetchJsonResult) => {
   const body = result.json;
   if (!body || typeof body !== "object" || Array.isArray(body)) return false;
   const payload = body as Record<string, unknown>;
-  const responseCode = Number(payload.responseCode ?? payload.code ?? payload.status);
+  const responseCode = Number(
+    payload.responseCode ?? payload.code ?? payload.status,
+  );
   const failureCode = Number(payload.failureCode);
   const message = String(payload.message ?? "").toLowerCase();
-  return responseCode === 429 || failureCode === 10005 || message.includes("rate limit");
+  return (
+    responseCode === 429 ||
+    failureCode === 10005 ||
+    message.includes("rate limit")
+  );
 };
 
 const readApiKeys = (): Array<{ source: KeySource; value: string }> => {
@@ -146,7 +169,7 @@ const readApiKeys = (): Array<{ source: KeySource; value: string }> => {
 
 export default async function handler(
   req: NextApiRequest,
-  res: NextApiResponse
+  res: NextApiResponse,
 ) {
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -168,7 +191,7 @@ export default async function handler(
     if (!localRateLimit.allowed) {
       res.setHeader("Retry-After", String(localRateLimit.resetSec));
       logWarn(
-        `[spat] local-rate-limit ip=${rateLimitKey} limit=${localRateLimit.limit} resetSec=${localRateLimit.resetSec}`
+        `[spat] local-rate-limit ip=${rateLimitKey} limit=${localRateLimit.limit} resetSec=${localRateLimit.resetSec}`,
       );
       return res.status(429).json({
         error: "local rate limit exceeded",
@@ -178,6 +201,8 @@ export default async function handler(
 
     const itstId = String(req.query.itstId || "").trim();
     if (!itstId) return res.status(400).json({ error: "missing itstId" });
+    if (!/^\d+$/.test(itstId))
+      return res.status(400).json({ error: "invalid itstId format" });
 
     const apiKeys = readApiKeys();
     if (!apiKeys.length) {
@@ -224,14 +249,14 @@ export default async function handler(
 
       logInfo(
         `[spat] upstream itstId=${itstId} keySource=${source} timingStatus=${timingRes.status} phaseStatus=${phaseRes.status} ` +
-          `timingQuota(${formatQuota(timingRes.rateLimit)}) phaseQuota(${formatQuota(phaseRes.rateLimit)})`
+          `timingQuota(${formatQuota(timingRes.rateLimit)}) phaseQuota(${formatQuota(phaseRes.rateLimit)})`,
       );
 
       const limited = isRateLimited(timingRes) || isRateLimited(phaseRes);
       const hasFallback = i < apiKeys.length - 1;
       if (limited && hasFallback) {
         logWarn(
-          `[spat] keySource=${source} rate-limited, retrying with fallback key`
+          `[spat] keySource=${source} rate-limited, retrying with fallback key`,
         );
         continue;
       }
@@ -248,7 +273,8 @@ export default async function handler(
 
     if (isRateLimited(timing) || isRateLimited(phase)) {
       return res.status(429).json({
-        error: "upstream rate limit exceeded (all configured API keys exhausted)",
+        error:
+          "upstream rate limit exceeded (all configured API keys exhausted)",
         upstream: {
           keySource,
           timing: { status: timing.status, rateLimit: timing.rateLimit },
@@ -260,8 +286,8 @@ export default async function handler(
     if (!timing.json) {
       logError(
         `[spat] non-json timing itstId=${itstId} status=${timing.status} body=${String(
-          timing.text || ""
-        ).slice(0, 300)}`
+          timing.text || "",
+        ).slice(0, 300)}`,
       );
       return res.status(502).json({
         error: "timing upstream non-json",
@@ -272,8 +298,8 @@ export default async function handler(
     if (!phase.json) {
       logError(
         `[spat] non-json phase itstId=${itstId} status=${phase.status} body=${String(
-          phase.text || ""
-        ).slice(0, 300)}`
+          phase.text || "",
+        ).slice(0, 300)}`,
       );
       return res.status(502).json({
         error: "phase upstream non-json",
@@ -287,7 +313,7 @@ export default async function handler(
 
     if (!Array.isArray(timingRecords) || !Array.isArray(phaseRecords)) {
       logError(
-        `[spat] unexpected shape itstId=${itstId} timingStatus=${timing.status} phaseStatus=${phase.status}`
+        `[spat] unexpected shape itstId=${itstId} timingStatus=${timing.status} phaseStatus=${phase.status}`,
       );
       return res.status(502).json({
         error: "unexpected upstream shape (array not found)",
@@ -303,7 +329,7 @@ export default async function handler(
         .filter((r) => String(r?.itstId ?? "") === itstId)
         .slice()
         .sort(
-          (a, b) => parseTransmissionTimeMs(b) - parseTransmissionTimeMs(a)
+          (a, b) => parseTransmissionTimeMs(b) - parseTransmissionTimeMs(a),
         );
       return candidates[0] || null;
     };
@@ -311,26 +337,26 @@ export default async function handler(
     const latestTiming = pickLatest(
       timingRecords.filter(
         (r): r is Record<string, unknown> =>
-          !!r && typeof r === "object" && !Array.isArray(r)
-      )
+          !!r && typeof r === "object" && !Array.isArray(r),
+      ),
     );
     const latestPhase = pickLatest(
       phaseRecords.filter(
         (r): r is Record<string, unknown> =>
-          !!r && typeof r === "object" && !Array.isArray(r)
-      )
+          !!r && typeof r === "object" && !Array.isArray(r),
+      ),
     );
 
     logDebug(`[data] timing=${!!latestTiming} phase=${!!latestPhase}`);
     if (!latestTiming || !latestPhase) {
       logWarn(
-        `[spat] missing latest record itstId=${itstId} latestTiming=${!!latestTiming} latestPhase=${!!latestPhase}`
+        `[spat] missing latest record itstId=${itstId} latestTiming=${!!latestTiming} latestPhase=${!!latestPhase}`,
       );
     }
 
     const trsmMs = Math.max(
       parseTransmissionTimeMs(latestTiming),
-      parseTransmissionTimeMs(latestPhase)
+      parseTransmissionTimeMs(latestPhase),
     );
     const ageSecRaw = trsmMs ? (Date.now() - trsmMs) / 1000 : null;
     const ageSec =
@@ -390,17 +416,15 @@ export default async function handler(
     logInfo(
       `[spat] ok itstId=${itstId} keySource=${keySource} items=${items.length} ageSec=${
         ageSec ?? "-"
-      } quotaRemaining=${
-        quota.remaining ?? "-"
-      }`
+      } quotaRemaining=${quota.remaining ?? "-"}`,
     );
     res.status(200).json(payload);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     logError(`ERROR /api/spat ${msg}`);
     if (msg.includes("aborted") || msg.includes("AbortError")) {
-      return res.status(504).json({ error: "upstream timeout", detail: msg });
+      return res.status(504).json({ error: "upstream timeout" });
     }
-    return res.status(500).json({ error: msg });
+    return res.status(500).json({ error: "internal server error" });
   }
 }

@@ -19,8 +19,11 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
       return res.status(400).json({ error: "invalid lat/lon" });
     }
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      return res.status(400).json({ error: "invalid coordinate range" });
+    }
     if (!itstMetaById || itstMetaById.size === 0) {
-      return res.status(200).json({ items: [] });
+      return res.status(503).json({ error: "nearby data source unavailable" });
     }
 
     const arr: NearbyItem[] = [];

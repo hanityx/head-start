@@ -92,11 +92,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
       const text = await resp.text();
       if (!resp.ok) {
-        return res.status(502).json({
-          error: "geocode upstream failed",
-          status: resp.status,
-          bodyPreview: text.slice(0, 200),
-        });
+        return res.status(502).json({ error: "geocode upstream failed" });
       }
       const data = JSON.parse(text) as NominatimItem[];
       if (!Array.isArray(data) || data.length === 0) {
@@ -118,7 +114,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (e instanceof Error && e.name === "AbortError") {
       return res.status(504).json({ error: "geocode timeout" });
     }
-    const msg = e instanceof Error ? e.message : String(e);
-    return res.status(500).json({ error: msg });
+    return res.status(500).json({ error: "internal server error" });
   }
 }
