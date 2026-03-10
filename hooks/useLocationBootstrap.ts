@@ -34,6 +34,7 @@ export function useLocationBootstrap(nearbyK = 5) {
       );
       const json = (await res.json()) as { items?: NearbyItem[]; error?: string };
       if (!res.ok) throw new Error(json.error ?? "주변 교차로를 찾지 못했습니다.");
+      setState((s) => ({ ...s, error: "" }));
       return Array.isArray(json.items) ? json.items : [];
     },
     [nearbyK]
