@@ -9,6 +9,7 @@ export type BearingVerifyMapProps = {
   lat: number;
   lon: number;
   bearings: number[];       // OSM 계산값
+  loading?: boolean;
   label: string;
   userLat?: number;
   userLon?: number;
