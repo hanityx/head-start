@@ -4,13 +4,15 @@
   "private": true,
   "scripts": {
     "build:data-index": "node scripts/build-itst-meta.js",
+    "fetch:bearings": "node scripts/fetch-bearings.js",
     "prebuild": "npm run build:data-index",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "screenshot": "node scripts/screenshot-demo.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.4",

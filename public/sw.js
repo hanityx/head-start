@@ -1,7 +1,7 @@
 const CACHE_NAME = "spat-v2";
 const PRECACHE = [
   "/",
-  "/quick",
+  "/?auto=1",
   "/manifest.json",
   "/icons/icon-192.png",
   "/icons/icon-512.png",

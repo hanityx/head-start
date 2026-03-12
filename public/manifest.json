@@ -2,9 +2,9 @@
   "name": "신호 잔여시간 확인",
   "short_name": "신호조회",
   "description": "서울 V2X SPaT – 횡단보도/차량 신호 잔여시간 확인",
-  "start_url": "/quick?auto=1",
+  "start_url": "/?auto=1",
   "scope": "/",
-  "id": "/quick",
+  "id": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0a0a0a",
@@ -13,7 +13,7 @@
     {
       "name": "빠른 조회",
       "short_name": "빠른조회",
-      "url": "/quick?auto=1",
+      "url": "/?auto=1",
       "icons": [
         {
           "src": "/icons/icon-192.png",
