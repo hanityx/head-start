@@ -52,9 +52,11 @@ describe("/api/ip-location", () => {
   });
 
   it("returns 504 on timeout abort", async () => {
-    ensureFetchMock().mockRejectedValueOnce(
-      Object.assign(new Error("aborted"), { name: "AbortError" })
-    );
+    const abortError = Object.assign(new Error("aborted"), { name: "AbortError" });
+    ensureFetchMock()
+      .mockRejectedValueOnce(abortError)
+      .mockRejectedValueOnce(abortError)
+      .mockRejectedValueOnce(abortError);
 
     const { req, res } = createMocks({ method: "GET" });
     await handler(req, res);

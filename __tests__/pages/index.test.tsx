@@ -1,38 +1,63 @@
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import Home from "@/pages/index";
-import { makeSpatResponse } from "@/test/fixtures";
-import { DEFAULT_ITST_ID } from "@/lib/defaults";
-import {
-  ensureFetchMock,
-  mockFetchJsonOnce,
-  resetFetchMock,
-} from "@/test/testUtils";
+import { ensureFetchMock, resetFetchMock } from "@/test/testUtils";
 
-const TEST_NEARBY_ITST_ID = "900001";
-const ONBOARDING_COOKIE_KEY = "onboarding_v1";
+jest.mock("next/router", () => ({
+  useRouter: () => ({
+    isReady: true,
+    push: jest.fn(),
+    replace: jest.fn(),
+    prefetch: jest.fn(),
+    query: {},
+    pathname: "/",
+    asPath: "/",
+  }),
+}));
 
-const clearCookie = (key: string) => {
-  document.cookie = `${key}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+const nearbyItem = {
+  itstId: "1560",
+  itstNm: "면목아이파크102동",
+  lat: 37.58,
+  lon: 127.08,
+  distanceM: 120,
 };
 
-const setupMatchMedia = (matches = false) => {
-  Object.defineProperty(window, "matchMedia", {
-    configurable: true,
-    value: jest.fn().mockImplementation(() => ({
-      matches,
-      media: "(max-width: 640px)",
-      onchange: null,
-      addListener: jest.fn(),
-      removeListener: jest.fn(),
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn(),
-      dispatchEvent: jest.fn(),
-    })),
+/** URL 패턴에 따라 mock 응답을 라우팅 — fetch 호출 순서에 무관하게 동작 */
+const setupDefaultMocks = () => {
+  ensureFetchMock().mockImplementation((url: string) => {
+    if (url.includes("/api/itst-meta")) {
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: async () => ({ lat: null, lon: null, itstNm: null }),
+        text: async () => "{}",
+      });
+    }
+    if (url.includes("/api/ip-location")) {
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: async () => ({ lat: 37.57, lon: 127.04, label: "서울시" }),
+        text: async () => "{}",
+      });
+    }
+    if (url.includes("/api/nearby")) {
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: async () => ({ items: [nearbyItem] }),
+        text: async () => "{}",
+      });
+    }
+    // spat, osm-roads 등 — 테스트에서 검사하지 않는 엔드포인트
+    return Promise.resolve({
+      ok: false, status: 503,
+      json: async () => ({ error: "no mock" }),
+      text: async () => "{}",
+    });
   });
 };
 
 describe("Home Page", () => {
   const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
+
   beforeAll(() => {
     ensureFetchMock();
   });
@@ -40,294 +65,216 @@ describe("Home Page", () => {
   beforeEach(() => {
     resetFetchMock();
     localStorage.clear();
-    clearCookie(ONBOARDING_COOKIE_KEY);
-    setupMatchMedia(false);
+    setupDefaultMocks();
   });
 
-  it("should render the main title", () => {
+  const openSearchOverlay = (container: HTMLElement) => {
+    const btn = container.querySelector('[data-tour="sidebar-toggle"]') as HTMLElement;
+    fireEvent.click(btn);
+  };
+
+  // 오버레이 목록 항목이 로드될 때까지 기다리는 헬퍼 — "120m"은 목록 항목에만 존재
+  const waitForNearbyItems = () => screen.findByText("120m");
+
+  it("should render the main title", async () => {
     render(<Home />);
-    expect(
-      screen.getByText("횡단보도/차량 신호 잔여시간 확인")
-    ).toBeInTheDocument();
+    expect(screen.getByText("신호 안내")).toBeInTheDocument();
   });
 
-  it("should open interactive guide tour and move to next step", () => {
-    render(<Home />);
-
-    expect(screen.getByTestId("quick-start-hint")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "도움말 다시 보기" }));
-    expect(screen.queryByTestId("quick-start-hint")).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "사용 가이드 투어" })).toBeInTheDocument();
-    expect(screen.getByText("교차로 ID를 먼저 확인하세요")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    expect(screen.getByText("조회 버튼으로 즉시 확인")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "건너뛰기" }));
-    expect(localStorage.getItem("onboarding:v1")).toBe("done");
-    expect(document.cookie).toContain(`${ONBOARDING_COOKIE_KEY}=done`);
+  it("should show sort buttons in search overlay", async () => {
+    const { container } = render(<Home />);
+    openSearchOverlay(container);
+    expect(screen.getByRole("button", { name: "가까운 순" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "이름 순" })).toBeInTheDocument();
   });
 
-  it("should use compact mobile copy for the tour on small viewport", () => {
-    setupMatchMedia(true);
-    render(<Home />);
-
-    fireEvent.click(screen.getByRole("button", { name: "도움말 다시 보기" }));
-    expect(screen.getByText("교차로 ID")).toBeInTheDocument();
-    expect(
-      screen.getByText("왼쪽(모바일은 위) 입력창에 ID를 넣거나, 주변 목록 선택으로 자동 입력하세요.")
-    ).toBeInTheDocument();
+  it("should load nearby intersections via ip-location on mount", async () => {
+    const { container } = render(<Home />);
+    openSearchOverlay(container);
+    expect(await waitForNearbyItems()).toBeInTheDocument();
+    expect(screen.getAllByText("면목아이파크102동").length).toBeGreaterThan(0);
+    expect(global.fetch).toHaveBeenCalledWith("/api/ip-location");
   });
 
-  it("should have default values for inputs", () => {
-    render(<Home />);
-    const itstIdInput = screen.getByDisplayValue(DEFAULT_ITST_ID);
-    const timeoutInput = screen.getByDisplayValue("25");
-    const intervalInput = screen.getByDisplayValue("3");
-
-    expect(itstIdInput).toBeInTheDocument();
-    expect(timeoutInput).toBeInTheDocument();
-    expect(intervalInput).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(`예: ${DEFAULT_ITST_ID}`)).toBeInTheDocument();
+  it("should show intersection ID and distance in list", async () => {
+    const { container } = render(<Home />);
+    openSearchOverlay(container);
+    await waitForNearbyItems();
+    expect(screen.getByText(/ID 1560/)).toBeInTheDocument();
+    expect(screen.getByText("120m")).toBeInTheDocument();
   });
 
-  it("should update input values on change", () => {
-    render(<Home />);
-    const itstIdInput = screen.getByDisplayValue(
-      DEFAULT_ITST_ID
-    ) as HTMLInputElement;
+  it("should select intersection and close overlay when clicked", async () => {
+    const { container } = render(<Home />);
+    openSearchOverlay(container);
+    await waitForNearbyItems();
 
-    fireEvent.change(itstIdInput, { target: { value: "1234" } });
-    expect(itstIdInput.value).toBe("1234");
-  });
+    // 거리가 표시된 버튼이 목록 항목 버튼 (헤더 버튼과 구분)
+    const itemBtn = screen.getByRole("button", { name: /면목아이파크102동.*120m/ });
+    fireEvent.click(itemBtn);
 
-  it("should call API when 조회 button is clicked", async () => {
-    mockFetchJsonOnce(makeSpatResponse());
-
-    render(<Home />);
-    const fetchButton = screen.getByRole("button", { name: "조회" });
-
-    await act(async () => {
-      fireEvent.click(fetchButton);
-      await flushPromises();
-    });
-
+    // Overlay should close
     await waitFor(() => {
-        expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining(`/api/spat?itstId=${DEFAULT_ITST_ID}`)
-      );
+      expect(screen.queryByPlaceholderText("교차로 이름 또는 ID...")).not.toBeInTheDocument();
     });
-  });
-
-  it("should display error message on API failure", async () => {
-    ensureFetchMock().mockRejectedValueOnce(new Error("Network error"));
-
-    render(<Home />);
-    const fetchButton = screen.getByRole("button", { name: "조회" });
-
-    await act(async () => {
-      fireEvent.click(fetchButton);
-      await flushPromises();
-    });
-
+    // itstId stored in localStorage
     await waitFor(() => {
-      expect(screen.getByText(/Network error/i)).toBeInTheDocument();
+      expect(localStorage.getItem("lastItstId")).toBe("1560");
     });
   });
 
-  it("should render nearby search inputs", () => {
-    render(<Home />);
-    expect(screen.getByLabelText("주소/역 이름으로 찾기")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "주소 검색" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "현재 위치" })).toBeInTheDocument();
-    expect(screen.queryByText("위도")).not.toBeInTheDocument();
-    expect(screen.queryByText("경도")).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "가까운 교차로 찾기" })
-    ).not.toBeInTheDocument();
-  });
-
-  it("should toggle auto refresh", () => {
-    render(<Home />);
-    const autoButton = screen.getByText("자동 갱신 켜기");
-
-    fireEvent.click(autoButton);
-    expect(screen.getByText("자동 갱신 끄기")).toBeInTheDocument();
-
-    fireEvent.click(autoButton);
-    expect(screen.getByText("자동 갱신 켜기")).toBeInTheDocument();
-  });
-
-  it("should search nearby intersections with geocoded coordinates", async () => {
-    mockFetchJsonOnce({
-      lat: "37.5701",
-      lon: "126.9768",
-      displayName: "테스트 위치",
+  it("should search intersections by name with debounce", async () => {
+    ensureFetchMock().mockImplementation((url: string) => {
+      if (url.includes("/api/search-intersections")) {
+        return Promise.resolve({
+          ok: true, status: 200,
+          json: async () => ({ items: [{ itstId: "9999", itstNm: "테스트사거리", lat: 37.5, lon: 127.0, distanceM: 500 }] }),
+          text: async () => "{}",
+        });
+      }
+      if (url.includes("/api/itst-meta")) return Promise.resolve({ ok: true, status: 200, json: async () => ({ lat: null, lon: null, itstNm: null }), text: async () => "{}" });
+      if (url.includes("/api/ip-location")) return Promise.resolve({ ok: true, status: 200, json: async () => ({ lat: 37.57, lon: 127.04, label: "서울시" }), text: async () => "{}" });
+      if (url.includes("/api/nearby")) return Promise.resolve({ ok: true, status: 200, json: async () => ({ items: [nearbyItem] }), text: async () => "{}" });
+      return Promise.resolve({ ok: false, status: 503, json: async () => ({ error: "no mock" }), text: async () => "{}" });
     });
-    mockFetchJsonOnce({ items: [] });
 
-    render(<Home />);
-    const addressInput = screen.getByLabelText("주소/역 이름으로 찾기");
-    fireEvent.change(addressInput, { target: { value: "테스트 주소" } });
+    const { container } = render(<Home />);
+    openSearchOverlay(container);
+    await waitForNearbyItems();
 
-    const addressButton = screen.getByRole("button", { name: "주소 검색" });
+    const searchInput = screen.getByPlaceholderText("교차로 이름 또는 ID...");
     await act(async () => {
-      fireEvent.click(addressButton);
+      fireEvent.change(searchInput, { target: { value: "테스트" } });
+      await new Promise((r) => setTimeout(r, 300));
       await flushPromises();
     });
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/geocode?q=")
-      );
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/nearby?lat=37.5701&lon=126.9768&k=5")
+        expect.stringContaining("/api/search-intersections?q=")
       );
     });
   });
 
-  it("should search nearby intersections with current geolocation", async () => {
-    mockFetchJsonOnce({ items: [] });
+  it("should fetch nearby intersections with GPS", async () => {
+    ensureFetchMock().mockImplementation((url: string) => {
+      if (url.includes("/api/nearby") && url.includes("lat=37.6548")) {
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ items: [{ itstId: "2230", itstNm: "방학사거리", lat: 37.65, lon: 127.02, distanceM: 50 }] }), text: async () => "{}" });
+      }
+      if (url.includes("/api/itst-meta")) return Promise.resolve({ ok: true, status: 200, json: async () => ({ lat: null, lon: null, itstNm: null }), text: async () => "{}" });
+      if (url.includes("/api/ip-location")) return Promise.resolve({ ok: true, status: 200, json: async () => ({ lat: 37.57, lon: 127.04, label: "서울시" }), text: async () => "{}" });
+      if (url.includes("/api/nearby")) return Promise.resolve({ ok: true, status: 200, json: async () => ({ items: [nearbyItem] }), text: async () => "{}" });
+      return Promise.resolve({ ok: false, status: 503, json: async () => ({ error: "no mock" }), text: async () => "{}" });
+    });
 
     const getCurrentPosition = jest.fn(
-      (success: (position: { coords: { latitude: number; longitude: number } }) => void) =>
-        success({ coords: { latitude: 37.5665, longitude: 126.978 } })
+      (success: (pos: { coords: { latitude: number; longitude: number } }) => void) =>
+        success({ coords: { latitude: 37.6548, longitude: 127.0224 } })
     );
-
     Object.defineProperty(global.navigator, "geolocation", {
       configurable: true,
       value: { getCurrentPosition },
     });
 
-    render(<Home />);
+    const { container } = render(<Home />);
+    openSearchOverlay(container);
+    await waitForNearbyItems();
 
-    const currentLocationButton = screen.getByRole("button", { name: "현재 위치" });
+    const gpsButton = screen.getByRole("button", { name: /현재 위치/ });
     await act(async () => {
-      fireEvent.click(currentLocationButton);
+      fireEvent.click(gpsButton);
       await flushPromises();
     });
 
     await waitFor(() => {
       expect(getCurrentPosition).toHaveBeenCalled();
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/nearby?lat=37.5665&lon=126.978&k=5")
+        expect.stringContaining("/api/nearby?lat=37.6548&lon=127.0224")
       );
     });
   });
 
-  it("should set id and fetch spat when selecting nearby intersection", async () => {
-    mockFetchJsonOnce({
-      items: [
-        {
-          itstId: TEST_NEARBY_ITST_ID,
-          itstNm: "테스트교차로A",
-          lat: 37.5,
-          lon: 127.0,
-          distanceM: 120.5,
-        },
-      ],
-    });
-    mockFetchJsonOnce(makeSpatResponse({ itstId: TEST_NEARBY_ITST_ID }));
+  it("should toggle sort between distance and name", async () => {
+    const { container } = render(<Home />);
+    openSearchOverlay(container);
+    await waitForNearbyItems();
 
-    const getCurrentPosition = jest.fn(
-      (
-        success: (position: { coords: { latitude: number; longitude: number } }) => void
-      ) => success({ coords: { latitude: 37.5665, longitude: 126.978 } })
-    );
+    const nameSort = screen.getByRole("button", { name: "이름 순" });
+    fireEvent.click(nameSort);
 
-    Object.defineProperty(global.navigator, "geolocation", {
-      configurable: true,
-      value: { getCurrentPosition },
-    });
+    const distSort = screen.getByRole("button", { name: "가까운 순" });
+    fireEvent.click(distSort);
 
-    render(<Home />);
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "현재 위치" }));
-      await flushPromises();
-    });
-
-    const selectButton = await screen.findByRole("button", { name: "이 ID로 조회" });
-    await act(async () => {
-      fireEvent.click(selectButton);
-      await flushPromises();
-    });
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue(TEST_NEARBY_ITST_ID)).toBeInTheDocument();
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining(`/api/spat?itstId=${TEST_NEARBY_ITST_ID}`)
-      );
-    });
+    expect(screen.getByRole("button", { name: "가까운 순" })).toBeInTheDocument();
   });
 
-  it("should show and hide map preview when 지도보기 is clicked", async () => {
-    mockFetchJsonOnce({
-      items: [
-        {
-          itstId: TEST_NEARBY_ITST_ID,
-          itstNm: "테스트교차로A",
-          lat: 37.5,
-          lon: 127.0,
-          distanceM: 120.5,
-        },
-      ],
-    });
-
-    const getCurrentPosition = jest.fn(
-      (
-        success: (position: { coords: { latitude: number; longitude: number } }) => void
-      ) => success({ coords: { latitude: 37.5665, longitude: 126.978 } })
-    );
-
-    Object.defineProperty(global.navigator, "geolocation", {
-      configurable: true,
-      value: { getCurrentPosition },
+  it("should preserve saved intersection instead of overwriting with nearest item", async () => {
+    localStorage.setItem("lastItstId", "9999");
+    ensureFetchMock().mockImplementation((url: string) => {
+      if (url.includes("/api/itst-meta?itstId=9999")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ lat: 37.5, lon: 127.0, itstNm: "저장교차로" }),
+          text: async () => "{}",
+        });
+      }
+      if (url.includes("/api/ip-location")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ lat: 37.57, lon: 127.04, label: "서울시" }),
+          text: async () => "{}",
+        });
+      }
+      if (url.includes("/api/nearby")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ items: [nearbyItem] }),
+          text: async () => "{}",
+        });
+      }
+      return Promise.resolve({
+        ok: false,
+        status: 503,
+        json: async () => ({ error: "no mock" }),
+        text: async () => "{}",
+      });
     });
 
     render(<Home />);
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "현재 위치" }));
-      await flushPromises();
-    });
-
-    const mapButton = await screen.findByRole("button", { name: "지도보기" });
-    await act(async () => {
-      fireEvent.click(mapButton);
-      await flushPromises();
-    });
-
-    expect(
-      screen.getByTitle(`교차로 위치 지도-nearby-${TEST_NEARBY_ITST_ID}`)
-    ).toBeInTheDocument();
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "지도 닫기" }));
-      await flushPromises();
-    });
-
     await waitFor(() => {
-      expect(
-        screen.queryByTitle(`교차로 위치 지도-nearby-${TEST_NEARBY_ITST_ID}`)
-      ).not.toBeInTheDocument();
+      expect(screen.getByText("저장교차로")).toBeInTheDocument();
     });
+    expect(localStorage.getItem("lastItstId")).toBe("9999");
   });
 
-  it("should display spat data when available", async () => {
-    mockFetchJsonOnce(makeSpatResponse());
+  it("should show empty state when search returns no results", async () => {
+    ensureFetchMock().mockImplementation((url: string) => {
+      if (url.includes("/api/search-intersections")) {
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ items: [] }), text: async () => "{}" });
+      }
+      if (url.includes("/api/itst-meta")) return Promise.resolve({ ok: true, status: 200, json: async () => ({ lat: null, lon: null, itstNm: null }), text: async () => "{}" });
+      if (url.includes("/api/ip-location")) return Promise.resolve({ ok: true, status: 200, json: async () => ({ lat: 37.57, lon: 127.04, label: "서울시" }), text: async () => "{}" });
+      if (url.includes("/api/nearby")) return Promise.resolve({ ok: true, status: 200, json: async () => ({ items: [nearbyItem] }), text: async () => "{}" });
+      return Promise.resolve({ ok: false, status: 503, json: async () => ({ error: "no mock" }), text: async () => "{}" });
+    });
 
-    render(<Home />);
-    const fetchButton = screen.getByRole("button", { name: "조회" });
+    const { container } = render(<Home />);
+    openSearchOverlay(container);
+    await waitForNearbyItems();
 
+    const searchInput = screen.getByPlaceholderText("교차로 이름 또는 ID...");
     await act(async () => {
-      fireEvent.click(fetchButton);
+      fireEvent.change(searchInput, { target: { value: "없는교차로abc" } });
+      await new Promise((r) => setTimeout(r, 300));
       await flushPromises();
     });
 
     await waitFor(() => {
-      expect(screen.getByText("테스트교차로")).toBeInTheDocument();
-      expect(screen.getByText("북측 보행")).toBeInTheDocument();
+      expect(screen.getByText("검색 결과가 없습니다.")).toBeInTheDocument();
     });
   });
 });

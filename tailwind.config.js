@@ -9,7 +9,15 @@ module.exports = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        display: ["system-ui", "-apple-system", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "sans-serif"],
+      },
       colors: {
+        "navy-950": "#020617",
+        "navy-900": "#0f172a",
+        "navy-800": "#1e293b",
+        "navy-700": "#334155",
+        "sky-accent": "#38bdf8",
         border: "var(--border)",
         input: "var(--input)",
         ring: "var(--ring)",
