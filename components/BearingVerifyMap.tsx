@@ -13,6 +13,7 @@ export type BearingVerifyMapProps = {
   label: string;
   userLat?: number;
   userLon?: number;
+  onModeChange?: (mode: "satellite" | "street") => void;
 };
 
 export function BearingVerifyMap(props: BearingVerifyMapProps) {

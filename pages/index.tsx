@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
-import { Search, RefreshCw, Zap, Satellite, ChevronDown, Locate, Radio, MapPin } from "lucide-react";
+import {
+  Search,
+  RefreshCw,
+  Zap,
+  Satellite,
+  ChevronDown,
+  Locate,
+  Radio,
+  MapPin,
+} from "lucide-react";
 import type { NearbyItem } from "@/lib/types";
 import { useLocationBootstrap } from "@/hooks/useLocationBootstrap";
 import { useSpat } from "@/hooks/useSpat";
@@ -13,7 +22,7 @@ import { haversineMeters, computeBearing } from "@/lib/utils";
 
 const NEARBY_K = 10;
 const DEFAULT_ITST_ID = "1954";
-const SEOUL_CENTER = { lat: 37.5665, lon: 126.9780 };
+const SEOUL_CENTER = { lat: 37.5665, lon: 126.978 };
 const AUTO_REFRESH_MS = 3000;
 
 const ONBOARDING_STORAGE_KEY = "onboarding:v1";
@@ -42,9 +51,16 @@ const hasCompletedOnboarding = () => {
   if (typeof window === "undefined") return true;
   const localDone =
     localStorage.getItem(ONBOARDING_STORAGE_KEY) === ONBOARDING_DONE_VALUE;
-  const cookieDone = readCookie(ONBOARDING_COOKIE_KEY) === ONBOARDING_DONE_VALUE;
-  if (!localDone && cookieDone) localStorage.setItem(ONBOARDING_STORAGE_KEY, ONBOARDING_DONE_VALUE);
-  if (localDone && !cookieDone) writeCookie(ONBOARDING_COOKIE_KEY, ONBOARDING_DONE_VALUE, ONBOARDING_COOKIE_MAX_AGE_SEC);
+  const cookieDone =
+    readCookie(ONBOARDING_COOKIE_KEY) === ONBOARDING_DONE_VALUE;
+  if (!localDone && cookieDone)
+    localStorage.setItem(ONBOARDING_STORAGE_KEY, ONBOARDING_DONE_VALUE);
+  if (localDone && !cookieDone)
+    writeCookie(
+      ONBOARDING_COOKIE_KEY,
+      ONBOARDING_DONE_VALUE,
+      ONBOARDING_COOKIE_MAX_AGE_SEC,
+    );
   return localDone || cookieDone;
 };
 
@@ -87,17 +103,28 @@ export default function Home() {
   const router = useRouter();
   const [itstId, setItstId] = useState<string>(DEFAULT_ITST_ID);
   const [itstNm, setItstNm] = useState<string | null>(null);
-  const [roadBearings, setRoadBearings] = useState<number[] | undefined>(undefined);
+  const [roadBearings, setRoadBearings] = useState<number[] | undefined>(
+    undefined,
+  );
   const [autoFetch, setAutoFetch] = useState(false);
 
   // 신호 컨트롤 상태
   const [isAuto, setIsAuto] = useState(false);
   const [verifyMode, setVerifyMode] = useState(false);
-  const [userGps, setUserGps] = useState<{ lat: number; lon: number } | null>(null);
+  const [verifyMapMode, setVerifyMapMode] = useState<"satellite" | "street">(
+    "satellite",
+  );
+  const [userGps, setUserGps] = useState<{ lat: number; lon: number } | null>(
+    null,
+  );
   const [geoSource, setGeoSource] = useState<"osm" | "fallback" | null>(null);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [geoLoading, setGeoLoading] = useState(false);
-  const [metaCoords, setMetaCoords] = useState<{ lat: number; lon: number; itstNm: string | null } | null>(null);
+  const [metaCoords, setMetaCoords] = useState<{
+    lat: number;
+    lon: number;
+    itstNm: string | null;
+  } | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const watchIdRef = useRef<number | null>(null);
@@ -121,7 +148,13 @@ export default function Home() {
   const { loading, gpsLoading, fetchNearby, bootstrapByIp, bootstrapByGps } =
     useLocationBootstrap(NEARBY_K);
 
-  const { spatData, error, errorDetail, isLoading: spatLoading, fetchSpat } = useSpat({
+  const {
+    spatData,
+    error,
+    errorDetail,
+    isLoading: spatLoading,
+    fetchSpat,
+  } = useSpat({
     itstId,
     timeoutMs: "25000",
   });
@@ -131,7 +164,9 @@ export default function Home() {
     if (!router.isReady || initialRouteAppliedRef.current) return;
     initialRouteAppliedRef.current = true;
 
-    const queryItstId = sanitizeDigits(firstQueryValue(router.query.itstId) ?? "");
+    const queryItstId = sanitizeDigits(
+      firstQueryValue(router.query.itstId) ?? "",
+    );
     const queryAuto = parseFlag(router.query.auto);
     const queryVerify = parseFlag(router.query.verify);
     const savedId =
@@ -146,16 +181,33 @@ export default function Home() {
     if (queryVerify !== null) setVerifyMode(queryVerify);
     setItstId(initialId);
     setAutoFetch(true);
-    if (typeof window !== "undefined") localStorage.setItem("lastItstId", initialId);
+    if (typeof window !== "undefined")
+      localStorage.setItem("lastItstId", initialId);
 
     fetch(`/api/itst-meta?itstId=${initialId}`)
       .then((r) => r.json())
-      .then((data: { lat: number | null; lon: number | null; itstNm: string | null }) => {
-        if (data.itstNm) setItstNm(data.itstNm);
-        if (data.lat && data.lon) setMetaCoords({ lat: data.lat, lon: data.lon, itstNm: data.itstNm });
-      })
+      .then(
+        (data: {
+          lat: number | null;
+          lon: number | null;
+          itstNm: string | null;
+        }) => {
+          if (data.itstNm) setItstNm(data.itstNm);
+          if (data.lat && data.lon)
+            setMetaCoords({
+              lat: data.lat,
+              lon: data.lon,
+              itstNm: data.itstNm,
+            });
+        },
+      )
       .catch(() => {});
-  }, [router.isReady, router.query.auto, router.query.itstId, router.query.verify]);
+  }, [
+    router.isReady,
+    router.query.auto,
+    router.query.itstId,
+    router.query.verify,
+  ]);
 
   // 2) IP 부트스트랩 → 주변 교차로
   useEffect(() => {
@@ -170,10 +222,12 @@ export default function Home() {
         const items = await fetchNearby(SEOUL_CENTER.lat, SEOUL_CENTER.lon);
         setNearbyItems(items);
         setLocationLabel("서울 전체");
-      } catch { /* noop */ }
+      } catch {
+        /* noop */
+      }
     };
     void boot();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 3) 주변 교차로 로드 → 가장 가까운 교차로 자동 선택
@@ -182,7 +236,7 @@ export default function Home() {
 
     const restoredId = restoredSelectionRef.current;
     const matched = restoredId
-      ? nearbyItems.find((item) => item.itstId === restoredId) ?? null
+      ? (nearbyItems.find((item) => item.itstId === restoredId) ?? null)
       : null;
     const target = matched ?? (!restoredId ? nearbyItems[0] : null);
 
@@ -193,36 +247,46 @@ export default function Home() {
     setItstId(target.itstId);
     setItstNm(target.itstNm);
     setMetaCoords({ lat: target.lat, lon: target.lon, itstNm: target.itstNm });
-    if (typeof window !== "undefined") localStorage.setItem("lastItstId", target.itstId);
+    if (typeof window !== "undefined")
+      localStorage.setItem("lastItstId", target.itstId);
     setAutoFetch(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nearbyItems]);
 
   // 4) 신호 1회 조회 (autoFetch가 true일 때만)
   useEffect(() => {
     if (!autoFetch) return;
     void fetchSpat();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itstId, autoFetch]);
 
   // 5) OSM 도로 각도 fetch — itstId당 1회만 실행 (좌표 세팅이 여러 번 일어나도 중복 방지)
   useEffect(() => {
     const lat =
-      spatData?.itstId === itstId ? spatData.lat ?? metaCoords?.lat : metaCoords?.lat;
+      spatData?.itstId === itstId
+        ? (spatData.lat ?? metaCoords?.lat)
+        : metaCoords?.lat;
     const lon =
-      spatData?.itstId === itstId ? spatData.lon ?? metaCoords?.lon : metaCoords?.lon;
+      spatData?.itstId === itstId
+        ? (spatData.lon ?? metaCoords?.lon)
+        : metaCoords?.lon;
     if (!lat || !lon) return;
     // 이 itstId는 이미 처리 완료 → 스킵
     if (geoFetchedForRef.current === itstId) return;
     geoFetchedForRef.current = itstId;
 
     // localStorage 캐시 우선 확인
-    const cached = typeof window !== "undefined" ? localStorage.getItem(`bearing_v2_${itstId}`) : null;
+    const cached =
+      typeof window !== "undefined"
+        ? localStorage.getItem(`bearing_v2_${itstId}`)
+        : null;
     if (cached) {
       try {
         setRoadBearings(JSON.parse(cached) as number[]);
         setGeoSource("fallback");
-      } catch { /* 캐시 손상 무시 */ }
+      } catch {
+        /* 캐시 손상 무시 */
+      }
       setGeoLoading(false);
       return;
     }
@@ -231,29 +295,43 @@ export default function Home() {
     setGeoLoading(true);
     void (async () => {
       try {
-        const res = await fetch(`/api/intersection-geometry?lat=${lat}&lon=${lon}&itstId=${itstId}`);
-        const json = (await res.json()) as { bearings?: number[]; source?: string; error?: string };
+        const res = await fetch(
+          `/api/intersection-geometry?lat=${lat}&lon=${lon}&itstId=${itstId}`,
+        );
+        const json = (await res.json()) as {
+          bearings?: number[];
+          source?: string;
+          error?: string;
+        };
         if (res.ok && Array.isArray(json.bearings)) {
           setRoadBearings(json.bearings);
           setGeoSource(json.source === "osm" ? "osm" : "fallback");
           if (typeof window !== "undefined" && json.bearings.length >= 2)
-            localStorage.setItem(`bearing_v2_${itstId}`, JSON.stringify(json.bearings));
+            localStorage.setItem(
+              `bearing_v2_${itstId}`,
+              JSON.stringify(json.bearings),
+            );
         } else if (!res.ok) {
           setGeoError(`OSM ${res.status}: ${json.error ?? "unknown"}`);
         }
       } catch (e: unknown) {
-        setGeoError(`OSM fetch error: ${e instanceof Error ? e.message : String(e)}`);
+        setGeoError(
+          `OSM fetch error: ${e instanceof Error ? e.message : String(e)}`,
+        );
       } finally {
         setGeoLoading(false);
       }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itstId, spatData?.lat, spatData?.lon, metaCoords?.lat, metaCoords?.lon]);
 
   // 자동 갱신 (순차 setTimeout)
   useEffect(() => {
     if (!isAuto) {
-      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
       return;
     }
     let cancelled = false;
@@ -265,7 +343,10 @@ export default function Home() {
     void runLoop();
     return () => {
       cancelled = true;
-      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
     };
   }, [fetchSpat, isAuto]);
 
@@ -281,9 +362,12 @@ export default function Home() {
     }
     if (!navigator.geolocation) return;
     watchIdRef.current = navigator.geolocation.watchPosition(
-      (pos) => setUserGps({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-      () => { /* GPS 거부/불가 시 무시 */ },
-      { enableHighAccuracy: true }
+      (pos) =>
+        setUserGps({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      () => {
+        /* GPS 거부/불가 시 무시 */
+      },
+      { enableHighAccuracy: true },
     );
     return () => {
       if (watchIdRef.current != null) {
@@ -293,20 +377,44 @@ export default function Home() {
     };
   }, [verifyMode]);
 
+  // 검색 오버레이 ESC 닫기
+  useEffect(() => {
+    if (!searchOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSearchOpen(false);
+        setQuery("");
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [searchOpen]);
+
   // 검색 debounce
   useEffect(() => {
     const q = query.trim();
-    if (!q) { setSearchResults(null); return; }
+    if (!q) {
+      setSearchResults(null);
+      return;
+    }
     setSearchLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/search-intersections?q=${encodeURIComponent(q)}`);
+        const res = await fetch(
+          `/api/search-intersections?q=${encodeURIComponent(q)}`,
+        );
         const json = (await res.json()) as { items?: NearbyItem[] };
         setSearchResults(Array.isArray(json.items) ? json.items : []);
-      } catch { setSearchResults([]); }
-      finally { setSearchLoading(false); }
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
     }, 250);
-    return () => { clearTimeout(timer); setSearchLoading(false); };
+    return () => {
+      clearTimeout(timer);
+      setSearchLoading(false);
+    };
   }, [query]);
 
   useEffect(() => {
@@ -325,11 +433,7 @@ export default function Home() {
         : router.asPath;
     if (currentUrl === nextUrl) return;
 
-    void router.replace(
-      nextUrl,
-      undefined,
-      { shallow: true, scroll: false },
-    );
+    void router.replace(nextUrl, undefined, { shallow: true, scroll: false });
   }, [itstId, isAuto, verifyMode, router, router.asPath, router.isReady]);
 
   // 모바일 뷰포트
@@ -368,7 +472,11 @@ export default function Home() {
   const markTourCompleted = useCallback(() => {
     if (typeof window === "undefined") return;
     localStorage.setItem(ONBOARDING_STORAGE_KEY, ONBOARDING_DONE_VALUE);
-    writeCookie(ONBOARDING_COOKIE_KEY, ONBOARDING_DONE_VALUE, ONBOARDING_COOKIE_MAX_AGE_SEC);
+    writeCookie(
+      ONBOARDING_COOKIE_KEY,
+      ONBOARDING_DONE_VALUE,
+      ONBOARDING_COOKIE_MAX_AGE_SEC,
+    );
   }, []);
 
   const handleCloseTour = useCallback(() => {
@@ -391,7 +499,8 @@ export default function Home() {
   };
 
   const goToSignal = (item: NearbyItem) => {
-    if (typeof window !== "undefined") localStorage.setItem("lastItstId", item.itstId);
+    if (typeof window !== "undefined")
+      localStorage.setItem("lastItstId", item.itstId);
     restoredSelectionRef.current = item.itstId;
     nearbySelectionResolvedRef.current = true;
     geoFetchedForRef.current = null; // 새 교차로 → fetch 허용
@@ -406,29 +515,42 @@ export default function Home() {
     setAutoFetch(true);
   };
 
-  const tourSteps = isMobileViewport ? HOME_TOUR_STEPS_MOBILE : HOME_TOUR_STEPS_DESKTOP;
+  const tourSteps = isMobileViewport
+    ? HOME_TOUR_STEPS_MOBILE
+    : HOME_TOUR_STEPS_DESKTOP;
 
   const displayItems = (() => {
-    const items = searchResults !== null ? [...searchResults] : [...nearbyItems];
-    if (sortBy === "name") items.sort((a, b) => a.itstNm.localeCompare(b.itstNm, "ko"));
+    const items =
+      searchResults !== null ? [...searchResults] : [...nearbyItems];
+    if (sortBy === "name")
+      items.sort((a, b) => a.itstNm.localeCompare(b.itstNm, "ko"));
     return items;
   })();
 
   const activeSpat = spatData?.itstId === itstId ? spatData : null;
   const spatItems = activeSpat && !activeSpat.isStale ? activeSpat.items : [];
-  const hasEmptySpat = Boolean(activeSpat && !activeSpat.isStale && spatItems.length === 0);
+  const hasEmptySpat = Boolean(
+    activeSpat && !activeSpat.isStale && spatItems.length === 0,
+  );
   const verifyLat = activeSpat?.lat ?? metaCoords?.lat;
   const verifyLon = activeSpat?.lon ?? metaCoords?.lon;
 
-  const distM = (userGps && verifyLat && verifyLon)
-    ? haversineMeters(userGps.lat, userGps.lon, verifyLat, verifyLon)
-    : null;
-  const distArrow = (distM != null && userGps && verifyLat && verifyLon)
-    ? bearingToArrow(computeBearing(userGps.lat, userGps.lon, verifyLat, verifyLon))
-    : null;
-  const distLabel = distM != null
-    ? (distM < 1000 ? `${Math.round(distM)}m` : `${(distM / 1000).toFixed(1)}km`)
-    : null;
+  const distM =
+    userGps && verifyLat && verifyLon
+      ? haversineMeters(userGps.lat, userGps.lon, verifyLat, verifyLon)
+      : null;
+  const distArrow =
+    distM != null && userGps && verifyLat && verifyLon
+      ? bearingToArrow(
+          computeBearing(userGps.lat, userGps.lon, verifyLat, verifyLon),
+        )
+      : null;
+  const distLabel =
+    distM != null
+      ? distM < 1000
+        ? `${Math.round(distM)}m`
+        : `${(distM / 1000).toFixed(1)}km`
+      : null;
 
   return (
     <>
@@ -439,83 +561,157 @@ export default function Home() {
 
       <div
         className="h-screen relative overflow-hidden"
-        style={{ background: "linear-gradient(160deg, #0f1e35 0%, #0c1220 50%, #090c18 100%)" }}
+        style={{
+          background:
+            "linear-gradient(160deg, #0f1e35 0%, #0c1220 50%, #090c18 100%)",
+        }}
       >
         {/* 배경 대기 광원 */}
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0">
-          <div style={{
-            position: "absolute", inset: 0,
-            background: "radial-gradient(ellipse 90% 55% at 50% -5%, rgba(70,110,240,0.18) 0%, transparent 65%)",
-          }} />
-          <div style={{
-            position: "absolute", inset: 0,
-            background: "radial-gradient(ellipse 70% 40% at 50% 100%, rgba(40,70,140,0.13) 0%, transparent 65%)",
-          }} />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-0"
+        >
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background:
+                "radial-gradient(ellipse 90% 55% at 50% -5%, rgba(70,110,240,0.18) 0%, transparent 65%)",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background:
+                "radial-gradient(ellipse 70% 40% at 50% 100%, rgba(40,70,140,0.13) 0%, transparent 65%)",
+            }}
+          />
         </div>
 
         {/* 교차로 시각화 — verifyMode 시 절반으로 축소 */}
-        <div className={`pointer-events-none absolute inset-y-0 left-0 transition-all duration-300 ${verifyMode ? "w-0 overflow-hidden md:w-1/2 md:overflow-visible" : "w-full inset-0"}`}>
+        <div
+          className={`pointer-events-none absolute inset-y-0 left-0 transition-all duration-300 ${verifyMode ? "w-0 overflow-hidden md:w-1/2 md:overflow-visible" : "w-full inset-0"}`}
+        >
           <IntersectionView
             items={spatItems}
             roadBearings={roadBearings}
             isLoading={spatLoading || geoLoading}
             isStale={activeSpat?.isStale}
-            emptyTitle={hasEmptySpat ? "신호 항목 없음" : undefined}
-            emptyDescription={hasEmptySpat ? "이 교차로는 현재 SPaT 값이 비어 있습니다" : undefined}
+            emptyTitle={
+              hasEmptySpat ? "지금은 신호 정보를 가져올 수 없어요" : undefined
+            }
+            emptyDescription={
+              hasEmptySpat ? "잠시 후 다시 조회해 주세요" : undefined
+            }
             className="w-full h-full"
           />
         </div>
 
         {/* 위성 검증 지도 */}
         {verifyMode && verifyLat && verifyLon && (
-          <div className="absolute inset-y-0 right-0 w-full md:w-1/2 md:border-l-2 md:border-purple-400/40 z-[15]">
+          <div className="absolute inset-y-0 right-0 w-full md:w-1/2 md:border-l-2 md:border-sky-400/30 z-[15]">
             {/* 모바일 닫기 버튼 (헤더 아래) */}
             <button
               onClick={() => setVerifyMode(false)}
-              className="md:hidden absolute top-[68px] left-4 flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-bold text-purple-200 transition-all"
+              className="md:hidden absolute top-[68px] left-4 flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-bold text-sky-100 transition-all"
               style={{
                 zIndex: 1002,
                 background: "rgba(2,6,23,0.85)",
                 backdropFilter: "blur(8px)",
-                border: "1px solid rgba(167,139,250,0.4)",
+                border: "1px solid rgba(56,189,248,0.35)",
               }}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>close</span>
-              검증 닫기
+              <span
+                className="material-symbols-outlined"
+                style={{ fontSize: 16 }}
+              >
+                close
+              </span>
+              닫기
             </button>
 
             {/* 데스크탑 상단 레이블 */}
-            <div className="hidden md:block" style={{
-              position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)",
-              zIndex: 1001, background: "rgba(2,6,23,0.85)", backdropFilter: "blur(8px)",
-              borderRadius: 8, padding: "5px 12px",
-              border: "1px solid rgba(167,139,250,0.4)",
-              fontSize: 11, fontWeight: 700, color: "#a78bfa", whiteSpace: "nowrap",
-            }}>
+            <div
+              className="hidden md:block"
+              style={{
+                position: "absolute",
+                top: 76,
+                left: "50%",
+                transform: "translateX(-50%)",
+                zIndex: 1001,
+                background: "rgba(2,6,23,0.85)",
+                backdropFilter: "blur(8px)",
+                borderRadius: 8,
+                padding: "5px 12px",
+                border: "1px solid rgba(56,189,248,0.35)",
+                fontSize: 11,
+                fontWeight: 700,
+                color: "#bae6fd",
+                maxWidth: "min(70vw, 360px)",
+                whiteSpace: "normal",
+                textAlign: "center",
+                lineHeight: 1.4,
+              }}
+            >
               {geoLoading
-                ? "위성사진 — OSM bearing 로드 중..."
+                ? verifyMapMode === "satellite"
+                  ? "위성사진에서 교차로 방향을 확인하는 중..."
+                  : "지도에서 교차로 방향을 확인하는 중..."
                 : roadBearings && roadBearings.length > 0
-                  ? "위성사진 + OSM bearing — 선이 실제 도로와 일치하는지 확인"
-                  : "위성사진 — 도로 형상 없음"}
+                  ? verifyMapMode === "satellite"
+                    ? "위성사진과 교차로 방향선을 보여주고 있어요"
+                    : "지도와 교차로 방향선을 보여주고 있어요"
+                  : verifyMapMode === "satellite"
+                    ? "위성사진에서 교차로 방향 정보를 찾지 못했어요"
+                    : "지도에서 교차로 방향 정보를 찾지 못했어요"}
             </div>
 
             {/* 내 위치 거리 배지 */}
-            <div style={{
-              position: "absolute", bottom: 8, right: 8, zIndex: 1001,
-              background: "rgba(2,6,23,0.85)", backdropFilter: "blur(8px)",
-              borderRadius: 8, padding: "8px 12px",
-              border: `1px solid ${userGps ? "rgba(34,197,94,0.4)" : "rgba(255,255,255,0.08)"}`,
-              display: "flex", flexDirection: "column", gap: 2, minWidth: 80,
-            }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            <div
+              style={{
+                position: "absolute",
+                bottom: 8,
+                right: 8,
+                zIndex: 1001,
+                background: "rgba(2,6,23,0.85)",
+                backdropFilter: "blur(8px)",
+                borderRadius: 8,
+                padding: "8px 12px",
+                border: `1px solid ${userGps ? "rgba(56,189,248,0.35)" : "rgba(255,255,255,0.08)"}`,
+                display: "flex",
+                flexDirection: "column",
+                gap: 2,
+                minWidth: 92,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: "#7dd3fc",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                }}
+              >
                 내 위치
               </div>
               {distLabel ? (
-                <div style={{ fontSize: 18, fontWeight: 800, color: "#22c55e", fontFamily: "monospace", lineHeight: 1.2 }}>
+                <div
+                  style={{
+                    fontSize: 18,
+                    fontWeight: 800,
+                    color: "#e0f2fe",
+                    fontFamily: "monospace",
+                    lineHeight: 1.2,
+                  }}
+                >
                   {distLabel} {distArrow}
                 </div>
               ) : (
-                <div style={{ fontSize: 11, color: "#64748b" }}>GPS 대기 중...</div>
+                <div style={{ fontSize: 11, color: "#94a3b8" }}>
+                  위치 확인 중...
+                </div>
               )}
             </div>
             <BearingVerifyMap
@@ -526,6 +722,7 @@ export default function Home() {
               label={itstNm ?? itstId}
               userLat={userGps?.lat}
               userLon={userGps?.lon}
+              onModeChange={setVerifyMapMode}
             />
           </div>
         )}
@@ -538,7 +735,13 @@ export default function Home() {
         <header className="absolute inset-x-0 top-3 z-30 flex justify-center px-3">
           <div
             className="glass-panel rounded-2xl flex items-center pl-4 pr-2 gap-2 w-full max-w-3xl"
-            style={{ minHeight: 52, ...(verifyMode && { background: "rgba(2,6,23,0.45)", backdropFilter: "blur(8px)" }) }}
+            style={{
+              minHeight: 52,
+              ...(verifyMode && {
+                background: "rgba(2,6,23,0.45)",
+                backdropFilter: "blur(8px)",
+              }),
+            }}
           >
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest shrink-0">
               신호 안내
@@ -563,21 +766,31 @@ export default function Home() {
                 <button
                   onClick={() => setVerifyMode((v) => !v)}
                   className={`glass-panel flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-semibold transition-all border ${
-                    verifyMode ? "border-purple-400/40 text-purple-300 bg-purple-400/10" : "border-white/10 text-slate-300 hover:text-white"
+                    verifyMode
+                      ? "border-sky-400/40 text-sky-200 bg-sky-400/10"
+                      : "border-white/10 text-slate-300 hover:text-white"
                   }`}
                 >
                   <Satellite className="h-3.5 w-3.5" />
-                  <span className="hidden md:inline">{verifyMode ? "검증 OFF" : "위성 검증"}</span>
+                  <span className="hidden md:inline">
+                    {verifyMode ? "지도 OFF" : "지도 보기"}
+                  </span>
                 </button>
               )}
               <button
                 onClick={() => setIsAuto((v) => !v)}
                 className={`glass-panel flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-semibold transition-all border ${
-                  isAuto ? "border-sky-400/40 text-sky-400 bg-sky-400/10" : "border-white/10 text-slate-300 hover:text-white"
+                  isAuto
+                    ? "border-sky-400/40 text-sky-400 bg-sky-400/10"
+                    : "border-white/10 text-slate-300 hover:text-white"
                 }`}
               >
-                <RefreshCw className={`h-3.5 w-3.5 ${isAuto ? "animate-spin" : ""}`} />
-                <span className="hidden md:inline">{isAuto ? "자동 ON" : "자동 OFF"}</span>
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${isAuto ? "animate-spin" : ""}`}
+                />
+                <span className="hidden md:inline">
+                  {isAuto ? "자동 ON" : "자동 OFF"}
+                </span>
               </button>
               <button
                 onClick={() => void fetchSpat()}
@@ -592,7 +805,9 @@ export default function Home() {
         </header>
 
         {/* 우측 정보 패널 (데스크탑만, verifyMode 아닐 때) */}
-        <aside className={`absolute right-4 top-20 z-30 w-64 flex-col gap-3 pointer-events-auto hidden md:flex ${verifyMode ? "md:hidden" : ""}`}>
+        <aside
+          className={`absolute right-4 top-20 z-30 w-64 flex-col gap-3 pointer-events-auto hidden md:flex ${verifyMode ? "md:hidden" : ""}`}
+        >
           {/* 시스템 상태 */}
           <div className="glass-panel rounded-2xl overflow-hidden">
             <button
@@ -601,22 +816,48 @@ export default function Home() {
             >
               <div className="flex items-center gap-2">
                 <Locate className="h-3.5 w-3.5 text-sky-400" />
-                <span className="text-xs font-bold text-slate-200">시스템 상태</span>
+                <span className="text-xs font-bold text-slate-200">
+                  시스템 상태
+                </span>
               </div>
-              <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform ${panelOpen ? "rotate-180" : ""}`} />
+              <ChevronDown
+                className={`h-3.5 w-3.5 text-slate-400 transition-transform ${panelOpen ? "rotate-180" : ""}`}
+              />
             </button>
             {panelOpen && (
               <div className="px-3 pb-3 space-y-2">
                 <StatusRow
                   icon={<Radio className="h-4 w-4 text-emerald-400" />}
-                  label="SPaT 연결"
-                  sub={error ? "오류" : hasEmptySpat ? "빈 응답" : activeSpat ? "정상" : "대기"}
-                  valueClass={error ? "text-rose-400" : hasEmptySpat ? "text-amber-400" : activeSpat ? "text-emerald-400" : "text-slate-400"}
-                  detail={activeSpat?.ageSec != null ? `ageSec: ${activeSpat.ageSec.toFixed(2)}s` : undefined}
+                  label="신호 연결"
+                  sub={
+                    error
+                      ? "오류"
+                      : hasEmptySpat
+                        ? "가져오지 못함"
+                        : activeSpat?.isStale
+                          ? "지연됨"
+                          : activeSpat
+                            ? "정상"
+                            : "대기"
+                  }
+                  valueClass={
+                    error
+                      ? "text-rose-400"
+                      : hasEmptySpat || activeSpat?.isStale
+                        ? "text-amber-400"
+                        : activeSpat
+                          ? "text-emerald-400"
+                          : "text-slate-400"
+                  }
+                  detail={
+                    activeSpat?.ageSec != null
+                      ? `${Math.round(activeSpat.ageSec)}초 전 수신`
+                      : undefined
+                  }
                 />
                 <StatusRow
                   icon={<MapPin className="h-4 w-4 text-sky-400" />}
-                  label="도로 형태"
+                  label="교차로 구조"
                   sub={
                     geoError
                       ? "오류"
@@ -625,19 +866,25 @@ export default function Home() {
                         : roadBearings
                           ? roadBearings.length > 0
                             ? geoSource === "osm"
-                              ? "OSM 실측"
-                              : "캐시"
-                            : "없음"
+                              ? "실측 데이터"
+                              : "저장된 값"
+                            : "정보 없음"
                           : "대기"
                   }
-                  valueClass={geoError ? "text-rose-400" : geoSource === "osm" ? "text-emerald-400" : "text-slate-400"}
-                  detail={
+                  valueClass={
                     geoError
-                      ?? (roadBearings
-                        ? roadBearings.length > 0
-                          ? `${roadBearings.length}방향`
-                          : "교차로 형상 없음"
-                        : undefined)
+                      ? "text-rose-400"
+                      : geoSource === "osm"
+                        ? "text-emerald-400"
+                        : "text-slate-400"
+                  }
+                  detail={
+                    geoError ??
+                    (roadBearings
+                      ? roadBearings.length > 0
+                        ? `${roadBearings.length}방향`
+                        : "교차로 형상 없음"
+                      : undefined)
                   }
                 />
               </div>
@@ -647,18 +894,45 @@ export default function Home() {
           {/* 신호 현황 */}
           {spatItems.length > 0 && (
             <div className="glass-panel rounded-2xl p-3 space-y-2">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">신호 현황</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                신호 현황
+              </div>
               {spatItems.slice(0, 6).map((item) => {
-                const isGo = item.status === "protected-Movement-Allowed" || item.status === "permissive-Movement-Allowed";
+                const isGo =
+                  item.status === "protected-Movement-Allowed" ||
+                  item.status === "permissive-Movement-Allowed";
                 const isStop = item.status === "stop-And-Remain";
                 return (
-                  <div key={item.key ?? item.title} className="flex items-center justify-between gap-2">
+                  <div
+                    key={item.key ?? item.title}
+                    className="flex items-center justify-between gap-2"
+                  >
                     <div className="flex items-center gap-2 min-w-0">
-                      <div className="h-2 w-2 rounded-full shrink-0" style={{ background: isGo ? "#10b981" : isStop ? "#ef4444" : "#64748b" }} />
-                      <span className="text-xs text-slate-300 truncate">{item.title}</span>
+                      <div
+                        className="h-2 w-2 rounded-full shrink-0"
+                        style={{
+                          background: isGo
+                            ? "#10b981"
+                            : isStop
+                              ? "#ef4444"
+                              : "#64748b",
+                        }}
+                      />
+                      <span className="text-xs text-slate-300 truncate">
+                        {item.title}
+                      </span>
                     </div>
-                    <span className="text-xs font-bold tabular-nums shrink-0" style={{ color: isGo ? "#10b981" : isStop ? "#ef4444" : "#64748b" }}>
-                      {item.sec != null ? `${item.sec.toFixed(1)}s` : "—"}
+                    <span
+                      className="text-xs font-bold tabular-nums shrink-0"
+                      style={{
+                        color: isGo
+                          ? "#10b981"
+                          : isStop
+                            ? "#ef4444"
+                            : "#64748b",
+                      }}
+                    >
+                      {item.sec != null ? `${item.sec.toFixed(1)}초` : "—"}
                     </span>
                   </div>
                 );
@@ -670,7 +944,8 @@ export default function Home() {
           {error && (
             <div className="glass-panel rounded-2xl p-3 border border-rose-500/30 space-y-1.5">
               <div className="text-xs text-rose-400 font-semibold">
-                조회 실패 {errorDetail ? `(HTTP ${errorDetail.httpStatus})` : ""}
+                조회 실패{" "}
+                {errorDetail ? `(HTTP ${errorDetail.httpStatus})` : ""}
               </div>
               <div className="text-[11px] text-rose-300/80 font-mono">
                 {errorDetail?.error ?? error}
@@ -683,14 +958,35 @@ export default function Home() {
         {spatItems.length > 0 && !verifyMode && (
           <div className="md:hidden absolute right-3 top-20 z-30 glass-panel rounded-xl p-2 space-y-1 pointer-events-none max-w-[120px]">
             {spatItems.slice(0, 4).map((item) => {
-              const isGo = item.status === "protected-Movement-Allowed" || item.status === "permissive-Movement-Allowed";
+              const isGo =
+                item.status === "protected-Movement-Allowed" ||
+                item.status === "permissive-Movement-Allowed";
               const isStop = item.status === "stop-And-Remain";
               return (
-                <div key={item.key ?? item.title} className="flex items-center justify-between gap-1.5">
-                  <div className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: isGo ? "#10b981" : isStop ? "#ef4444" : "#64748b" }} />
-                  <span className="text-[10px] text-slate-300 truncate flex-1">{item.title}</span>
-                  <span className="text-[10px] font-bold tabular-nums shrink-0" style={{ color: isGo ? "#10b981" : isStop ? "#ef4444" : "#64748b" }}>
-                    {item.sec != null ? `${Math.round(item.sec)}s` : "—"}
+                <div
+                  key={item.key ?? item.title}
+                  className="flex items-center justify-between gap-1.5"
+                >
+                  <div
+                    className="h-1.5 w-1.5 rounded-full shrink-0"
+                    style={{
+                      background: isGo
+                        ? "#10b981"
+                        : isStop
+                          ? "#ef4444"
+                          : "#64748b",
+                    }}
+                  />
+                  <span className="text-[10px] text-slate-300 truncate flex-1">
+                    {item.title}
+                  </span>
+                  <span
+                    className="text-[10px] font-bold tabular-nums shrink-0"
+                    style={{
+                      color: isGo ? "#10b981" : isStop ? "#ef4444" : "#64748b",
+                    }}
+                  >
+                    {item.sec != null ? `${Math.round(item.sec)}초` : "—"}
                   </span>
                 </div>
               );
@@ -701,12 +997,26 @@ export default function Home() {
         {/* 하단 정보바 */}
         {activeSpat && !verifyMode && (
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 max-w-[90vw]">
-            <div className="glass-panel rounded-full px-4 py-1.5 flex items-center gap-3 text-[11px] text-slate-400 whitespace-nowrap overflow-hidden">
-              <span className="font-semibold text-slate-300 truncate max-w-[120px]">{activeSpat.itstNm ?? itstId}</span>
-              {activeSpat.fetchedAtKst && <span className="hidden sm:inline">{activeSpat.fetchedAtKst}</span>}
+            <div className="glass-panel rounded-full px-4 py-1.5 flex items-center gap-3 text-[11px] text-slate-400 min-w-0">
+              <span className="font-semibold text-slate-300 truncate max-w-[120px] shrink-0">
+                {activeSpat.itstNm ?? itstId}
+              </span>
+              {activeSpat.fetchedAtKst && (
+                <span className="hidden sm:inline truncate">
+                  {activeSpat.fetchedAtKst}
+                </span>
+              )}
               {activeSpat.ageSec != null && (
-                <span className={activeSpat.isStale ? "text-rose-400" : "text-emerald-400"}>
-                  {activeSpat.ageSec.toFixed(2)}s
+                <span
+                  className={`shrink-0 ${
+                    activeSpat.isStale || hasEmptySpat
+                      ? "text-amber-300"
+                      : "text-emerald-400"
+                  }`}
+                >
+                  {activeSpat.isStale || hasEmptySpat
+                    ? "신호 없음"
+                    : `${Math.round(activeSpat.ageSec)}초 전`}
                 </span>
               )}
             </div>
@@ -717,7 +1027,11 @@ export default function Home() {
         {searchOpen && (
           <div
             className="fixed inset-0 z-50 overlay-slide-in"
-            style={{ background: "rgba(8,12,20,0.82)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}
+            style={{
+              background: "rgba(8,12,20,0.82)",
+              backdropFilter: "blur(20px)",
+              WebkitBackdropFilter: "blur(20px)",
+            }}
           >
             <div className="flex flex-col h-full max-w-2xl mx-auto px-4 pt-4 pb-6">
               {/* 검색 입력 */}
@@ -737,7 +1051,10 @@ export default function Home() {
                   />
                 </div>
                 <button
-                  onClick={() => { setSearchOpen(false); setQuery(""); }}
+                  onClick={() => {
+                    setSearchOpen(false);
+                    setQuery("");
+                  }}
                   className="text-slate-400 hover:text-white px-2 py-2 text-sm shrink-0"
                 >
                   닫기
@@ -751,7 +1068,10 @@ export default function Home() {
                     onClick={() => setSortBy("distance")}
                     className="px-3 py-1 text-xs font-bold rounded-lg transition-all"
                     style={{
-                      background: sortBy === "distance" ? "rgba(255,255,255,0.1)" : "transparent",
+                      background:
+                        sortBy === "distance"
+                          ? "rgba(255,255,255,0.1)"
+                          : "transparent",
                       color: sortBy === "distance" ? "#e2e8f0" : "#64748b",
                     }}
                   >
@@ -761,7 +1081,10 @@ export default function Home() {
                     onClick={() => setSortBy("name")}
                     className="px-3 py-1 text-xs font-medium rounded-lg transition-all"
                     style={{
-                      background: sortBy === "name" ? "rgba(255,255,255,0.1)" : "transparent",
+                      background:
+                        sortBy === "name"
+                          ? "rgba(255,255,255,0.1)"
+                          : "transparent",
                       color: sortBy === "name" ? "#e2e8f0" : "#64748b",
                     }}
                   >
@@ -773,7 +1096,10 @@ export default function Home() {
                   disabled={gpsLoading}
                   className="flex items-center gap-1.5 text-xs text-slate-400 disabled:opacity-50"
                 >
-                  <span className="material-symbols-outlined text-sm" style={{ color: "#4ea86e" }}>
+                  <span
+                    className="material-symbols-outlined text-sm"
+                    style={{ color: "#38bdf8" }}
+                  >
                     gps_fixed
                   </span>
                   {gpsLoading ? "확인 중..." : "현재 위치"}
@@ -783,7 +1109,9 @@ export default function Home() {
               {/* 위치 레이블 */}
               {locationLabel && (
                 <div className="flex items-center gap-1.5 mb-3 text-xs text-slate-500">
-                  <span className="material-symbols-outlined text-sm">my_location</span>
+                  <span className="material-symbols-outlined text-sm text-sky-400">
+                    my_location
+                  </span>
                   <span>{locationLabel} 기준 교차로를 불러왔습니다.</span>
                 </div>
               )}
@@ -795,7 +1123,10 @@ export default function Home() {
                       <div
                         key={i}
                         className="rounded-xl p-4 animate-pulse skeleton-shimmer"
-                        style={{ background: "rgba(255,255,255,0.04)", height: 72 }}
+                        style={{
+                          background: "rgba(255,255,255,0.04)",
+                          height: 72,
+                        }}
                       />
                     ))
                   : null}
@@ -811,8 +1142,13 @@ export default function Home() {
                     }}
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-bold text-white truncate">{item.itstNm}</div>
-                      <div className="text-xs mt-0.5 flex items-center gap-2" style={{ color: "#475569" }}>
+                      <div className="text-sm font-bold text-white truncate">
+                        {item.itstNm}
+                      </div>
+                      <div
+                        className="text-xs mt-0.5 flex items-center gap-2"
+                        style={{ color: "#475569" }}
+                      >
                         <span
                           className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium"
                           style={{
@@ -830,7 +1166,12 @@ export default function Home() {
                           ? `${(item.distanceM / 1000).toFixed(1)}km`
                           : `${Math.round(item.distanceM)}m`}
                       </span>
-                      <span className="text-[10px]" style={{ color: "#475569" }}>직선 거리</span>
+                      <span
+                        className="text-[10px]"
+                        style={{ color: "#475569" }}
+                      >
+                        직선 거리
+                      </span>
                     </div>
                   </button>
                 ))}
@@ -859,7 +1200,11 @@ export default function Home() {
 
 // ── 상태 행 컴포넌트 ────────────────────────────────────────
 function StatusRow({
-  icon, label, sub, valueClass, detail,
+  icon,
+  label,
+  sub,
+  valueClass,
+  detail,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -871,9 +1216,8 @@ function StatusRow({
     <div className="flex items-center justify-between rounded-lg bg-white/5 border border-white/5 px-2.5 py-2 gap-2">
       <div className="flex items-center gap-2">
         <div className="bg-white/5 p-1.5 rounded-lg">{icon}</div>
-        <div>
-          <div className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">{label}</div>
-          <div className="text-xs font-bold text-white">{sub}</div>
+        <div className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">
+          {label}
         </div>
       </div>
       <div className="text-right">

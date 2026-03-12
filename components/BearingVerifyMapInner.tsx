@@ -17,6 +17,7 @@ type Props = {
   label: string;
   userLat?: number;
   userLon?: number;
+  onModeChange?: (mode: "satellite" | "street") => void;
 };
 
 // bearing(°) + 중심좌표 → 60m 끝점 좌표
@@ -69,10 +70,15 @@ export default function BearingVerifyMapInner({
   label,
   userLat,
   userLon,
+  onModeChange,
 }: Props) {
   const [mapMode, setMapMode] = React.useState<"satellite" | "street">(
     "satellite",
   );
+
+  React.useEffect(() => {
+    onModeChange?.(mapMode);
+  }, [mapMode, onModeChange]);
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
@@ -153,7 +159,7 @@ export default function BearingVerifyMapInner({
             radius={9}
             pathOptions={{
               color: "#fff",
-              fillColor: "#22c55e",
+              fillColor: "#38bdf8",
               fillOpacity: 1,
               weight: 3,
             }}
@@ -235,7 +241,7 @@ export default function BearingVerifyMapInner({
           backdropFilter: "blur(8px)",
           borderRadius: 8,
           padding: "8px 12px",
-          border: "1px solid rgba(255,255,255,0.1)",
+          border: "1px solid rgba(56,189,248,0.22)",
           display: "flex",
           flexDirection: "column",
           gap: 4,
@@ -245,17 +251,17 @@ export default function BearingVerifyMapInner({
           style={{
             fontSize: 10,
             fontWeight: 700,
-            color: "#475569",
+            color: "#7dd3fc",
             letterSpacing: "0.08em",
             textTransform: "uppercase",
             marginBottom: 2,
           }}
         >
-          OSM bearing
+          교차로 방향선
         </div>
         {bearings.length === 0 && (
-          <div style={{ fontSize: 11, color: "#64748b" }}>
-            {loading ? "로드 중..." : "도로 형상 없음"}
+          <div style={{ fontSize: 11, color: "#94a3b8" }}>
+            {loading ? "불러오는 중..." : "방향 정보 없음"}
           </div>
         )}
         {bearings.map((b, i) => (
@@ -299,7 +305,7 @@ export default function BearingVerifyMapInner({
                 width: 12,
                 height: 12,
                 borderRadius: "50%",
-                background: "#22c55e",
+                background: "#38bdf8",
                 border: "2px solid #fff",
                 flexShrink: 0,
               }}
