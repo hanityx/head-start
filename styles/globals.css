@@ -3,19 +3,19 @@
 @tailwind utilities;
 
 :root {
-  --background: #0b0f1a;
-  --foreground: #eef2ff;
-  --card: #121a33;
-  --card-foreground: #eef2ff;
-  --popover: #121a33;
-  --popover-foreground: #eef2ff;
-  --primary: #4f8cff;
-  --primary-foreground: #0b0f1a;
-  --secondary: #1b243a;
-  --secondary-foreground: #eef2ff;
-  --muted: #95a3b8;
-  --muted-bg: #1b243a;
-  --muted-foreground: #95a3b8;
+  --background: #101012;
+  --foreground: #f0f0f4;
+  --card: #16161a;
+  --card-foreground: #f0f0f4;
+  --popover: #16161a;
+  --popover-foreground: #f0f0f4;
+  --primary: #4ea86e;
+  --primary-foreground: #101012;
+  --secondary: #1c1c22;
+  --secondary-foreground: #f0f0f4;
+  --muted: #808088;
+  --muted-bg: #1c1c22;
+  --muted-foreground: #808088;
   --accent: #8b5cf6;
   --accent-foreground: #0b0f1a;
   --destructive: #ff5c5c;
@@ -29,12 +29,12 @@
   --text: var(--foreground);
   --muted-text: var(--muted);
 
-  --success: #22c55e;
-  --warning: #f59e0b;
+  --success: #4ea86e;
+  --warning: #c09040;
 
-  --signal-red: #ff4d4d;
-  --signal-yellow: #fbbf24;
-  --signal-green: #22c55e;
+  --signal-red: #c05050;
+  --signal-yellow: #c09040;
+  --signal-green: #4ea86e;
 
   --ok: #86efac;
   --warn: #fde68a;
@@ -137,4 +137,71 @@ a {
   .skeleton-shimmer::after {
     animation: none;
   }
+}
+
+/* ── Animations ─────────────────────────────────────────────── */
+@keyframes overlay-slide-in-kf {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.overlay-slide-in {
+  animation: overlay-slide-in-kf 0.2s ease-out both;
+}
+
+@keyframes item-fade-in-kf {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.item-fade-in {
+  animation: item-fade-in-kf 0.18s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay-slide-in,
+  .item-fade-in { animation: none; }
+}
+
+/* ── Intersection View ─────────────────────────────────────── */
+.glass-panel {
+  background: rgba(14, 16, 26, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  box-shadow: 0 4px 24px 0 rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.traffic-light-glow-green {
+  box-shadow: 0 0 22px 6px rgba(78, 168, 110, 0.45) !important;
+}
+.traffic-light-glow-red {
+  box-shadow: 0 0 22px 6px rgba(192, 80, 80, 0.45) !important;
+}
+.traffic-light-glow-yellow {
+  box-shadow: 0 0 22px 6px rgba(192, 144, 64, 0.45) !important;
+}
+
+@keyframes ped-walk {
+  0%   { left: 4%;  opacity: 0; }
+  8%   { opacity: 1; }
+  92%  { opacity: 1; }
+  100% { left: 96%; opacity: 0; }
+}
+.ped-dot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ea86e;
+  box-shadow: 0 0 6px #4ea86e;
+  animation: ped-walk 5s linear infinite;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ped-dot { animation: none; opacity: 0.6; left: 50%; }
 }

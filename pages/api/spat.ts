@@ -149,23 +149,7 @@ const isRateLimited = (result: FetchJsonResult) => {
   );
 };
 
-const readApiKeys = (): Array<{ source: KeySource; value: string }> => {
-  const primary = String(process.env.TDATA_API_KEY || "").trim();
-  const sub = String(process.env.TDATA_API_KEY_SUB || "").trim();
-  const sub2 = String(process.env.TDATA_API_KEY_SUB2 || "").trim();
-  const out: Array<{ source: KeySource; value: string }> = [];
-  const seen = new Set<string>();
-  for (const candidate of [
-    { source: "primary" as const, value: primary },
-    { source: "sub" as const, value: sub },
-    { source: "sub2" as const, value: sub2 },
-  ]) {
-    if (!candidate.value || seen.has(candidate.value)) continue;
-    seen.add(candidate.value);
-    out.push(candidate);
-  }
-  return out;
-};
+const readApiKey = () => String(process.env.TDATA_API_KEY || "").trim();
 
 export default async function handler(
   req: NextApiRequest,
@@ -204,11 +188,10 @@ export default async function handler(
     if (!/^\d+$/.test(itstId))
       return res.status(400).json({ error: "invalid itstId format" });
 
-    const apiKeys = readApiKeys();
-    if (!apiKeys.length) {
+    const apiKey = readApiKey();
+    if (!apiKey) {
       return res.status(400).json({
-        error:
-          "missing apiKey (set TDATA_API_KEY and optional TDATA_API_KEY_SUB/TDATA_API_KEY_SUB2 env)",
+        error: "missing apiKey (set TDATA_API_KEY env)",
       });
     }
 
@@ -218,65 +201,77 @@ export default async function handler(
       : 25000;
     logInfo(`[spat] req itstId=${itstId} timeoutMs=${timeoutMs}`);
 
-    let timing: FetchJsonResult | null = null;
-    let phase: FetchJsonResult | null = null;
-    let keySource: KeySource = apiKeys[0].source;
+    const urlTiming = buildUpstreamUrl(ENDPOINT_TIMING, {
+      apiKey,
+      itstId,
+      type: "json",
+      pageNo: 1,
+      numOfRows: 10,
+    });
+    const urlPhase = buildUpstreamUrl(ENDPOINT_PHASE, {
+      apiKey,
+      itstId,
+      type: "json",
+      pageNo: 1,
+      numOfRows: 10,
+    });
 
-    for (let i = 0; i < apiKeys.length; i += 1) {
-      const { source, value: apiKey } = apiKeys[i];
-      const urlTiming = buildUpstreamUrl(ENDPOINT_TIMING, {
-        apiKey,
-        itstId,
-        type: "json",
-        pageNo: 1,
-        numOfRows: 10,
-      });
-      const urlPhase = buildUpstreamUrl(ENDPOINT_PHASE, {
-        apiKey,
-        itstId,
-        type: "json",
-        pageNo: 1,
-        numOfRows: 10,
-      });
+    logDebug(`[timing URL] ${urlTiming.replace(apiKey, "***")}`);
+    logDebug(`[phase URL] ${urlPhase.replace(apiKey, "***")}`);
 
-      logDebug(`[timing URL][${source}] ${urlTiming.replace(apiKey, "***")}`);
-      logDebug(`[phase URL][${source}] ${urlPhase.replace(apiKey, "***")}`);
+    const [timingSettled, phaseSettled] = await Promise.allSettled([
+      fetchJsonWithTimeout(urlTiming, timeoutMs),
+      fetchJsonWithTimeout(urlPhase, timeoutMs),
+    ]);
 
-      const [timingRes, phaseRes] = await Promise.all([
-        fetchJsonWithTimeout(urlTiming, timeoutMs),
-        fetchJsonWithTimeout(urlPhase, timeoutMs),
-      ]);
+    const timingFailed = timingSettled.status === "rejected";
+    const phaseFailed = phaseSettled.status === "rejected";
+    const timingErrMsg = timingFailed
+      ? (timingSettled.reason instanceof Error
+          ? timingSettled.reason.message
+          : String(timingSettled.reason))
+      : null;
+    const phaseErrMsg = phaseFailed
+      ? (phaseSettled.reason instanceof Error
+          ? phaseSettled.reason.message
+          : String(phaseSettled.reason))
+      : null;
 
-      logInfo(
-        `[spat] upstream itstId=${itstId} keySource=${source} timingStatus=${timingRes.status} phaseStatus=${phaseRes.status} ` +
-          `timingQuota(${formatQuota(timingRes.rateLimit)}) phaseQuota(${formatQuota(phaseRes.rateLimit)})`,
+    if (timingFailed || phaseFailed) {
+      const isTimeout =
+        (timingErrMsg ?? "").includes("abort") ||
+        (phaseErrMsg ?? "").includes("abort");
+      const failedEndpoints = [
+        timingFailed ? "timing" : null,
+        phaseFailed ? "phase" : null,
+      ].filter(Boolean);
+      logError(
+        `[spat] fetch failed itstId=${itstId} keySource=primary ` +
+          `failed=${failedEndpoints.join("+")} timingErr=${timingErrMsg ?? "-"} phaseErr=${phaseErrMsg ?? "-"}`,
       );
-
-      const limited = isRateLimited(timingRes) || isRateLimited(phaseRes);
-      const hasFallback = i < apiKeys.length - 1;
-      if (limited && hasFallback) {
-        logWarn(
-          `[spat] keySource=${source} rate-limited, retrying with fallback key`,
-        );
-        continue;
-      }
-
-      timing = timingRes;
-      phase = phaseRes;
-      keySource = source;
-      break;
+      return res.status(504).json({
+        error: isTimeout ? "upstream timeout" : "upstream fetch error",
+        failedEndpoints,
+        detail: { timingErr: timingErrMsg, phaseErr: phaseErrMsg },
+      });
     }
 
-    if (!timing || !phase) {
-      throw new Error("failed to fetch upstream responses");
-    }
+    const timing = (timingSettled as PromiseFulfilledResult<FetchJsonResult>)
+      .value;
+    const phase = (phaseSettled as PromiseFulfilledResult<FetchJsonResult>)
+      .value;
+    const keySource: KeySource = "primary";
+
+    logInfo(
+      `[spat] upstream itstId=${itstId} keySource=${keySource} timingStatus=${timing.status} phaseStatus=${phase.status} ` +
+        `timingQuota(${formatQuota(timing.rateLimit)}) phaseQuota(${formatQuota(phase.rateLimit)})`,
+    );
 
     if (isRateLimited(timing) || isRateLimited(phase)) {
       return res.status(429).json({
         error:
           "upstream rate limit exceeded (all configured API keys exhausted)",
         upstream: {
-          keySource,
           timing: { status: timing.status, rateLimit: timing.rateLimit },
           phase: { status: phase.status, rateLimit: phase.rateLimit },
         },
@@ -405,7 +400,6 @@ export default async function handler(
 
       fetchedAtKst: nowKstString(),
       upstream: {
-        keySource,
         timing: { status: timing.status, rateLimit: timingQuota },
         phase: { status: phase.status, rateLimit: phaseQuota },
       },

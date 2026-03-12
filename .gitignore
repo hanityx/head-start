@@ -8,6 +8,7 @@
 
 # next.js
 /.next/
+/.next-dev/
 /out/
 
 # production
@@ -44,11 +45,13 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# local docs scratch
-/docs
+
 
 # local cctv research artifacts
 local/cctv/
 docs/cctv-*.md
 data/cctv-*.json
 scripts/*cctv*.py
+
+# project-specific excludes
+docs/

@@ -71,7 +71,7 @@ export type MergedItem = {
   phaseKey: string | null;
 };
 
-export type RateLimitInfo = {
+export type RawRateLimitInfo = {
   limit: string | null;
   remaining: string | null;
   reset: string | null;
@@ -82,10 +82,10 @@ export type FetchJsonResult = {
   status: number;
   text: string;
   json: unknown | null;
-  rateLimit: RateLimitInfo;
+  rateLimit: RawRateLimitInfo;
 };
 
-function pickRateLimitInfo(headers: unknown): RateLimitInfo {
+function pickRawRateLimitInfo(headers: unknown): RawRateLimitInfo {
   const get = (name: string) => {
     if (!headers || typeof headers !== "object") return null;
     if (!("get" in headers) || typeof (headers as { get?: unknown }).get !== "function") {
@@ -198,7 +198,7 @@ export async function fetchJsonWithTimeout(
       status: res.status,
       text,
       json,
-      rateLimit: pickRateLimitInfo((res as { headers?: unknown }).headers),
+      rateLimit: pickRawRateLimitInfo((res as { headers?: unknown }).headers),
     };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -415,4 +415,20 @@ export function haversineMeters(
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+/** 두 지점 사이의 방위각(bearing) 계산 (0–360°, 북=0) */
+export function computeBearing(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLon = toRad(lon2 - lon1);
+  const y = Math.sin(dLon) * Math.cos(toRad(lat2));
+  const x =
+    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
