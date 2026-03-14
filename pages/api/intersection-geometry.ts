@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import { logDebug, logError } from "@/lib/logger";
 import { loadItstMeta } from "@/lib/itstMeta";
-import { haversineMeters, computeBearing } from "@/lib/utils";
+import { haversineMeters, computeBearing } from "@/lib/geo";
 
 const OVERPASS_MIRRORS = [
   "https://overpass-api.de/api/interpreter",

@@ -1,16 +1,17 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import {
   buildUpstreamUrl,
-  extractPhaseStatus,
-  extractTimingItems,
   type FetchJsonResult,
   fetchJsonWithTimeout,
   findFirstArrayPayload,
+} from "@/lib/fetch-utils";
+import {
+  extractPhaseStatus,
+  extractTimingItems,
   mergeItems,
-  nowKstString,
   parseTransmissionTimeMs,
-  toKstMsString,
-} from "@/lib/utils";
+} from "@/lib/spat-utils";
+import { nowKstString, toKstMsString } from "@/lib/time";
 import { loadItstMeta } from "@/lib/itstMeta";
 import { logDebug, logError, logInfo, logWarn } from "@/lib/logger";
 import type { SpatResponse } from "@/lib/types";
