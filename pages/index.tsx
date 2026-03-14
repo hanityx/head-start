@@ -7,7 +7,7 @@ import { useSpat } from "@/hooks/useSpat";
 import { IntersectionView } from "@/components/IntersectionView";
 import { OnboardingTour } from "@/components/OnboardingTour";
 import { DEFAULT_ITST_ID } from "@/lib/defaults";
-import { readStorage, writeStorage } from "@/lib/onboarding";
+import { readStorage, writeStorage } from "@/lib/storage";
 import { useIntersectionGeometry } from "@/hooks/useIntersectionGeometry";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import { useGpsTrack } from "@/hooks/useGpsTrack";

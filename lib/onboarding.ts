@@ -5,6 +5,8 @@
  * 쿠키를 사용하는 이유: 같은 기기에서 localStorage를 지워도 재표시 방지.
  */
 
+import { readStorage, writeStorage } from "@/lib/storage";
+
 const ONBOARDING_STORAGE_KEY = "onboarding:v1";
 const ONBOARDING_COOKIE_KEY = "onboarding_v1";
 const ONBOARDING_DONE_VALUE = "done";
@@ -31,18 +33,6 @@ export function writeCookie(
   document.cookie = `${encodeURIComponent(key)}=${encodeURIComponent(
     value,
   )}; path=/; max-age=${maxAgeSec}; samesite=lax`;
-}
-
-// ── localStorage helpers ────────────────────────────────────────────────────
-
-export function readStorage(key: string): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(key);
-}
-
-export function writeStorage(key: string, value: string): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(key, value);
 }
 
 // ── Onboarding state ────────────────────────────────────────────────────────

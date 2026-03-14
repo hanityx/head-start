@@ -33,7 +33,7 @@ const formatQuota = (q: {
 }) =>
   `limit=${q.limit ?? "-"} remaining=${q.remaining ?? "-"} resetSec=${q.reset ?? "-"}`;
 
-type KeySource = "primary" | "sub" | "sub2";
+type KeySource = "primary";
 type LocalRateLimitEntry = { count: number; resetAt: number };
 
 const DEFAULT_LOCAL_RATE_LIMIT_MAX = 120;

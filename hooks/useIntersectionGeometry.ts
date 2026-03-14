@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { readStorage, writeStorage } from "@/lib/onboarding";
+import { readStorage, writeStorage } from "@/lib/storage";
 
 const BEARING_CACHE_PREFIX = "bearing_v2_";
 
