@@ -16,7 +16,6 @@ type State = {
   loading: boolean;
   gpsLoading: boolean;
   error: string;
-  status: string;
 };
 
 export function useLocationBootstrap(nearbyK = 5) {
@@ -24,7 +23,6 @@ export function useLocationBootstrap(nearbyK = 5) {
     loading: false,
     gpsLoading: false,
     error: "",
-    status: "",
   });
 
   const fetchNearby = useCallback(
@@ -41,7 +39,7 @@ export function useLocationBootstrap(nearbyK = 5) {
   );
 
   const bootstrapByIp = useCallback(async (): Promise<BootstrapResult> => {
-    setState((s) => ({ ...s, loading: true, error: "", status: "대략 위치로 주변 교차로 찾는 중..." }));
+    setState((s) => ({ ...s, loading: true, error: "" }));
     try {
       const ipRes = await fetch("/api/ip-location");
       const ipJson = (await ipRes.json()) as { lat?: number; lon?: number; label?: string; error?: string };
@@ -52,15 +50,11 @@ export function useLocationBootstrap(nearbyK = 5) {
       }
       const items = await fetchNearby(lat, lon);
       const label = ipJson.label ?? "";
-      setState((s) => ({
-        ...s,
-        status: label ? `${label} 기준 교차로를 불러왔습니다.` : "대략 위치 기준 교차로를 불러왔습니다.",
-        error: "",
-      }));
+      setState((s) => ({ ...s, error: "" }));
       return { items, label };
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setState((s) => ({ ...s, error: msg, status: "" }));
+      setState((s) => ({ ...s, error: msg }));
       return { items: [] };
     } finally {
       setState((s) => ({ ...s, loading: false }));
@@ -72,13 +66,13 @@ export function useLocationBootstrap(nearbyK = 5) {
       setState((s) => ({ ...s, error: "현재 위치를 지원하지 않는 브라우저입니다." }));
       return { items: [] };
     }
-    setState((s) => ({ ...s, gpsLoading: true, error: "", status: "현재 위치 확인 중..." }));
+    setState((s) => ({ ...s, gpsLoading: true, error: "" }));
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, GEO_OPTIONS);
       });
       const items = await fetchNearby(pos.coords.latitude, pos.coords.longitude);
-      setState((s) => ({ ...s, status: "현재 위치 기준 교차로를 불러왔습니다.", error: "" }));
+      setState((s) => ({ ...s, error: "" }));
       return { items };
     } catch (e: unknown) {
       const geErr = e as GeolocationPositionError;
@@ -86,7 +80,7 @@ export function useLocationBootstrap(nearbyK = 5) {
       if (geErr?.code === geErr?.PERMISSION_DENIED) msg = "위치 권한을 허용해 주세요.";
       else if (geErr?.code === geErr?.TIMEOUT) msg = "위치 확인 시간이 초과되었습니다.";
       else if (e instanceof Error) msg = e.message;
-      setState((s) => ({ ...s, error: msg, status: "" }));
+      setState((s) => ({ ...s, error: msg }));
       return { items: [] };
     } finally {
       setState((s) => ({ ...s, gpsLoading: false }));

@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { logInfo, logWarn } from "@/lib/logger";
+import { fetchJsonWithTimeout } from "@/lib/fetch-utils";
 
 type IpApiResponse = {
   latitude?: number;
@@ -86,18 +87,10 @@ const PROVIDERS = [
 const TIMEOUT_MS = 5000;
 
 async function tryProvider(provider: typeof PROVIDERS[number]): Promise<LocationPayload> {
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const resp = await fetch(provider.url, {
-      signal: controller.signal,
-      headers: { Accept: "application/json" },
-    });
-    if (!resp.ok) throw new Error(`non-ok status=${resp.status}`);
-    const text = await resp.text();
-    let json: unknown;
-    try { json = JSON.parse(text); } catch { throw new Error("non-json"); }
-    const payload = provider.parse(json);
+    const result = await fetchJsonWithTimeout(provider.url, TIMEOUT_MS);
+    if (!result.ok) throw new Error(`non-ok status=${result.status}`);
+    const payload = provider.parse(result.json);
     if (!payload) throw new Error("invalid payload");
     logInfo(`[ip-location] provider=${provider.name} ok lat=${payload.lat}`);
     return payload;
@@ -105,8 +98,6 @@ async function tryProvider(provider: typeof PROVIDERS[number]): Promise<Location
     const msg = e instanceof Error ? e.message : String(e);
     logWarn(`[ip-location] provider=${provider.name} failed=${msg}`);
     throw e;
-  } finally {
-    clearTimeout(t);
   }
 }
 

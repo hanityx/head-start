@@ -1,5 +1,5 @@
 import { NextApiRequest, NextApiResponse } from "next";
-import { haversineMeters } from "@/lib/utils";
+import { haversineMeters } from "@/lib/geo";
 import { loadItstMeta } from "@/lib/itstMeta";
 import type { NearbyItem } from "@/lib/types";
 

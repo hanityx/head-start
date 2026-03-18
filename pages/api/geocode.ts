@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import { fetchJsonWithTimeout } from "@/lib/fetch-utils";
 
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -80,36 +81,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   url.searchParams.set("countrycodes", "kr");
 
   try {
-    const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), 5000);
-    try {
-      const resp = await fetch(url.toString(), {
-        signal: controller.signal,
-        headers: {
-          "User-Agent": "spat-nextjs/1.0 (contact: local)",
-          Accept: "application/json",
-        },
-      });
-      const text = await resp.text();
-      if (!resp.ok) {
-        return res.status(502).json({ error: "geocode upstream failed" });
-      }
-      const data = JSON.parse(text) as NominatimItem[];
-      if (!Array.isArray(data) || data.length === 0) {
-        return res.status(404).json({ error: "not found" });
-      }
-      const item = pickBestCandidate(q, data);
-      const payload = {
-        lat: item.lat,
-        lon: item.lon,
-        displayName: item.display_name ?? "",
-      };
-      cache.set(cacheKey, { ts: Date.now(), value: payload });
-      res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=60");
-      return res.status(200).json(payload);
-    } finally {
-      clearTimeout(t);
+    const result = await fetchJsonWithTimeout(url.toString(), 5000);
+    if (!result.ok) {
+      return res.status(502).json({ error: "geocode upstream failed" });
     }
+    const data = result.json as NominatimItem[];
+    if (!Array.isArray(data) || data.length === 0) {
+      return res.status(404).json({ error: "not found" });
+    }
+    const item = pickBestCandidate(q, data);
+    const payload = {
+      lat: item.lat,
+      lon: item.lon,
+      displayName: item.display_name ?? "",
+    };
+    cache.set(cacheKey, { ts: Date.now(), value: payload });
+    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=60");
+    return res.status(200).json(payload);
   } catch (e: unknown) {
     if (e instanceof Error && e.name === "AbortError") {
       return res.status(504).json({ error: "geocode timeout" });
